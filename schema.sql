@@ -10,8 +10,13 @@ create table Credit_cards (
 card_number int primary key,
 from_date date,
 CVV int not null,
-expiry_date date not null,
-cust_id int not null references Customers
+expiry_date date not null
+);
+
+create table Owns (
+card_number int references Credit_cards,
+cust_id int references Customers,
+primary key(card_number,cust_id)
 );
 
 create table Employees (
@@ -72,17 +77,17 @@ location text,
 seating_capacity int
 );
 
+create table Course_areas (
+name text primary key,
+eid int not null references Managers
+);
+
 create table Courses (
 course_id int primary key,
 duration int,
 title text,
 description text, 
 name text not null references Course_areas
-);
-
-create table Course_areas (
-name text primary key,
-eid int not null references Managers
 );
 
 create table Instructors (
@@ -97,12 +102,12 @@ primary key(eid,name)
 );
 
 create table Full_time_Instructors (
-eid int primary key references Employees
+eid int primary key references Instructors
 on delete cascade
 );
 
 create table Part_time_Instructors (
-eid int primary key references Employees
+eid int primary key references Instructors
 on delete cascade
 );
 
@@ -134,7 +139,7 @@ rid int not null references Rooms,
 eid int not null references Instructors,
 launch_date date,
 course_id int,
-foreign key(launch_date, course_id) references Course_offerings(launch_date, course_id)
+foreign key(launch_date, course_id) references Course_offerings
 on delete cascade,
 primary key(sid,course_id,launch_date)
 );
@@ -147,28 +152,30 @@ cust_id int references Customers,
 sid int,
 course_id int,
 launch_date date,
-foreign key(sid,course_id,launch_date) references Sessions(sid,course_id,launch_date),
+foreign key(sid,course_id,launch_date) references Sessions,
 primary key(cust_id,cancel_date,sid,course_id,launch_date)
 );
 
 create table Registers (
 reg_date date,
 card_number int,
+cust_id int,
 sid int,
 course_id int,
 launch_date date,
-foreign key(card_number) references Credit_cards(card_number),
-foreign key(sid,course_id,launch_date) references Sessions(sid,course_id,launch_date),
-primary key(card_number,reg_date,sid,course_id,launch_date)
+foreign key(card_number,cust_id) references Owns,
+foreign key(sid,course_id,launch_date) references Sessions,
+primary key(card_number,cust_id,reg_date,sid,course_id,launch_date)
 );
 
 create table Buys (
 buy_date date,
 package_id int references Course_packages,
 card_number int,
+cust_id int,
 num_remaining_redemptions int not null,
-foreign key(card_number) references Credit_cards(card_number),
-primary key(buy_date,package_id,card_number)
+foreign key(card_number,cust_id) references Owns,
+primary key(buy_date,package_id,card_number,cust_id)
 );
 
 create table Redeems (
@@ -176,13 +183,15 @@ redeem_date date,
 buy_date date,
 package_id int references Course_packages,
 card_number int,
+cust_id int,
 sid int,
 course_id int,
 launch_date date,
-foreign key(sid,course_id,launch_date) references Sessions(sid,course_id,launch_date),
-foreign key(buy_date,package_id,card_number) references Buys(buy_date,package_id,card_number),
-primary key(redeem_date,sid,course_id,launch_date,buy_date,package_id,card_number)
+foreign key(sid,course_id,launch_date) references Sessions,
+foreign key(buy_date,package_id,card_number,cust_id) references Buys,
+primary key(redeem_date,sid,course_id,launch_date,buy_date,package_id,card_number,cust_id)
 );
+
 
 --checks if the instructor specialises in the area of the session he is assigned to
 --checks if the instructor is teaching 2 consecutive sessions
