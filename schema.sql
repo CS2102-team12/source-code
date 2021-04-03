@@ -8,7 +8,6 @@ email text
 
 create table Credit_cards (
 card_number int primary key,
-from_date date,
 CVV int not null,
 expiry_date date not null
 );
@@ -16,6 +15,7 @@ expiry_date date not null
 create table Owns (
 card_number int references Credit_cards,
 cust_id int references Customers,
+from_date date,
 primary key(card_number,cust_id)
 );
 
@@ -134,7 +134,7 @@ check ( extract(dow from session_date::timestamp) >= 1 and extract(dow from sess
 start_time time
 check ( start_time::time >= '0900' and start_time::time < '1200' or start_time::time >= '1400' and start_time::time < '1800'),
 end_time time
-check (end_time::time <='1800'),
+check (end_time::time <= '1800'),
 rid int not null references Rooms,
 eid int not null references Instructors,
 launch_date date,
@@ -219,8 +219,8 @@ and courseArea = name;
 select count(*) INTO inst_time
 from Sessions
 where NEW.eid = eid
-and (DATE_PART('minute', end_time, NEW.start_time) < 60
-or DATE_PART('minute', NEW.end_time, start_time) < 60);
+and (DATE_PART('minute', NEW.start_time-end_time) < 60
+or DATE_PART('minute', start_time-NEW.end_time) < 60);
 
 IF inst_spec = 0 or inst_time > 0 THEN
 RETURN NULL;
@@ -254,7 +254,9 @@ where NEW.session_date = session_date
 and (NEW.start_time >= start_time
 and NEW.start_time <= end_time
 or NEW.end_time >= start_time
-and NEW.end_time <= end_time)
+and NEW.end_time <= end_time
+or NEW.start_time < start_time
+and NEW.end_time > end_time)
 and (NEW.course_id = course_id
 or NEW.rid = rid
 or NEW.eid = eid)
