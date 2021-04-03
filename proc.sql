@@ -1,16 +1,16 @@
-CREATE OR REPLACE PROCEDURE remove_employee(eid int, dep_date date)
+CREATE OR REPLACE PROCEDURE remove_employee(employee_id int, dep_date date)
 AS $$
 BEGIN
-    IF EXISTS(SELECT 1 FROM Managers AS M WHERE M.eid = eid) THEN
-        IF EXISTS(SELECT 1 FROM Course_areas AS CA WHERE CA.eid = eid) THEN
+    IF EXISTS(SELECT 1 FROM Managers AS M WHERE M.eid = employee_id) THEN
+        IF EXISTS(SELECT 1 FROM Course_areas AS CA WHERE CA.eid = employee_id) THEN
             RAISE EXCEPTION 'No departure of Manager managing a course area is allowed.';
         END IF;
-    ELSIF EXISTS(SELECT 1 FROM Administrators AS A WHERE A.eid = eid) THEN
+    ELSIF EXISTS(SELECT 1 FROM Administrators AS A WHERE A.eid = employee_id) THEN
         IF EXISTS(SELECT 1 FROM Course_offerings AS CO WHERE CO.eid = eid AND CO.registration_deadline > dep_date) THEN
             RAISE EXCEPTION 'No departure of Administrator before a course registration closes is allowed.';
         END IF;
-    ELSIF EXISTS(SELECT 1 FROM INSTRUCTORS AS I WHERE I.eid = eid) THEN
-        IF EXISTS(SELECT 1 FROM Sessions AS S WHERE S.eid = eid AND S.start_date > dep_date) THEN
+    ELSIF EXISTS(SELECT 1 FROM INSTRUCTORS AS I WHERE I.eid = employee_id) THEN
+        IF EXISTS(SELECT 1 FROM Sessions AS S WHERE S.eid = employee_id AND S.start_date > dep_date) THEN
             RAISE EXCEPTION 'No departure of Instructor after a session has started is allowed.';
         END IF;
     END IF;
@@ -18,7 +18,7 @@ BEGIN
     --update departure date
     UPDATE Employees
     SET depart_date = dep_date
-    WHERE id = eid;
+    WHERE eid = employee_id;
 
     COMMIT;
 END;
@@ -42,7 +42,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
---in progress
+-- done
 CREATE TYPE information_session AS (session_date date, start_hour time, room_id int);
 
 CREATE OR REPLACE PROCEDURE add_course_offering(course_id int, launch_date date,
@@ -60,6 +60,7 @@ DECLARE
     course_area text := (SELECT name FROM Courses AS C WHERE C.course_id = course_id);
     mid int := (SELECT eid FROM Course_areas WHERE name = course_area);
     possible_instructor int;
+    new_session information_session;
 BEGIN
 
     IF EXISTS (SELECT 1 FROM Course_offerings AS CO WHERE CO.launch_date = launch_date AND CO.course_id = course_id) THEN
@@ -152,13 +153,47 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
---in progress
+--might need to check if the json format is agreeable with all of you, currently: {all the info}, {session 1 info}, {session 2 info}
 CREATE OR REPLACE FUNCTION get_my_course_package(cust_id int)
-RETURNS TABLE (j json) AS $$
+RETURNS json AS $$
 DECLARE
-
+    active_package_id int;
+    package_name text;
+    purchase_date date;
+    price_of_package numeric;
+    number_free_sessions int;
+    number_remaining int := 0;
+    package_info_without_sessions JSONB;
+    sessions_info JSONB;
+    final JSONB;
 BEGIN
 
+    IF NOT EXISTS (SELECT 1 FROM Buys AS B WHERE B.cust_id = cust_id AND num_remaining_redemptions >= 1) THEN
+        SELECT package_id, buy_date INTO active_package_id, purchase_date FROM Buys B WHERE B.cust_id = cust_id ORDER BY buy_date DESC LIMIT 1;
+    ELSE
+        SELECT package_id, buy_date, num_remaining_redemptions INTO active_package_id, purchase_date, number_remaining FROM Buys B WHERE B.cust_id = cust_id AND B.num_remaining_redemptions >= 1;
+    END IF;
+
+    SELECT name, price, num_free_registrations INTO package_name, price_of_package, number_free_sessions FROM Course_packages WHERE package_id = active_package_id;
+
+
+    package_info_without_sessions := (select jsonb_build_object('package_name', package_name, 'purchase_date', purchase_date, 'price_of_package', price_of_package,
+     'number_of_free_sessions', number_free_sessions, 'number_of_sessions_not_redeemed', number_remaining));
+
+    WITH filter_redeems AS (
+        SELECT * FROM Redeems WHERE buy_date = purchase_date AND package_id = active_package_id AND cust_id = cust_id
+    ), redeems_sessions AS(
+        SELECT * FROM (filter_redeems NATURAL JOIN Sessions)
+    ), pre_json AS (
+        select sid, name, session_date, start_time FROM (redeems_sessions natural join Courses)
+    ), final_json AS (SELECT json_agg(
+        jsonb_build_object('redeemed_course_name', name, 'redeemed_session_date', session_date, 'redeemed_start_time', start_time)
+        )
+      FROM pre_json
+    ) SELECT json_agg(row_to_json(t))::jsonb INTO sessions_info FROM final_json;
+
+    final := (select package_info_without_sessions || sessions_info);
+    RETURN final::json;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -362,4 +397,259 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+/*
+--draft, version 2 seems to make more sense, keep this here first just in case
+CREATE OR REPLACE FUNCTION promote_courses()
+RETURNS TABLE (customer_id int, customer_name text, course_area_A text,
+course_identifier_C int, course_title_C text, launch_date_offering_C date,
+course_offering_deadline date, fees_course_offering date) ORDER BY customer_id, course_offering_deadline AS $$
+DECLARE
+    customers (cid) - active to get inactive list of cid
+    WITH inactive_customers AS (
+        SELECT cust_id FROM Customers
+        EXCEPT
+        SELECT cust_id FROM Redeems AS R WHERE ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', R.redeem_date::date)) * 12 +
+        (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', R.redeem_date::date)) >= 6)
+        EXCEPT
+        SELECT cust_id FROM Registers AS Re WHERE ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', Re.reg_date::date)) * 12 +
+         (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', Re.reg_date::date)) >= 6)
+    ), merging_customers_registers AS (
+        SELECT cust_id, reg_date, name FROM (inactive_customers NATURAL LEFT JOIN (Registers NATURAL JOIN Courses))
+    ), merging_customers_redeems AS (
+        SELECT cust_id, redeem_date, name FROM (merging_customers_registers NATURAL LEFT JOIN (Redeems NATURAL JOIN Courses))
+    ) SELECT * FROM merging_customers_registers;
+
+    /*
+    some thoughts
+    -customer either only redeems, or only registers, or have something in redeem and registers
+    inactive customer: never register for any course_offering in last 6 monthly_salary
+    - find these customers first -- check registers and redeems table
+    course area A is interest to C if : some course_offering in A that C registered in for 3 recent most course_offering
+    if never sign up before, then every course area is interesting to C
+BEGIN
+
+END;
+$$ LANGUAGE plpgsql;
+*/
+
+
+--version 2, might want to check if record is null when empty relation is selected, dep on get_avail_course_offerings, cols of output!
+--also retrieved course_id using course_title, not sure if this is allowed
+-- working on to see if the cursor for all_offering_curs should be changed, currently unable to get launch date and also course_title
+CREATE OR REPLACE FUNCTION promote_courses()
+RETURNS TABLE (customer_id int, customer_name text, course_area_A text,
+course_identifier_C int, course_title_C text, launch_date_offering_C date,
+course_offering_deadline date, fees_course_offering date) AS $$
+DECLARE
+    curs CURSOR FOR (SELECT cust_id, name FROM Customers ORDER BY cust_id);
+    all_offering_curs CURSOR FOR (SELECT get_available_course_offerings());
+    r RECORD;
+    courses_record RECORD;
+    redeem_record RECORD;
+    register_record RECORD;
+    last_purchase RECORD;
+    customer_name text;
+    customer_id int;
+    course_id_1 int;
+    course_id_2 int;
+    course_id_3 int;
+    course_area_1 int;
+    course_area_2 int;
+    course_area_3 int;
+BEGIN
+    OPEN curs;
+    LOOP
+        FETCH curs INTO r;
+        EXIT WHEN NOT FOUND;
+        customer_name := r.name;
+        customer_id := r.id;
+
+        WITH check_redeem AS (
+            SELECT * FROM Redeems AS R WHERE R.cust_id = customer_id ORDER BY R.redeem_date DESC LIMIT 1
+        ) SELECT * INTO redeem_record FROM check_redeem;
+
+        WITH check_register AS (
+            SELECT * FROM Registers AS Re WHERE Re.cust_id = customer_id ORDER BY Re.reg_date DESC LIMIT 1
+        ) SELECT * INTO register_record FROM check_register;
+
+        --get three latest course_area
+
+        --select first
+        WITH get_registered AS (
+            SELECT cust_id, reg_date, course_id FROM Registers AS RE WHERE Re.customer_id = customer_id
+        ), get_redeemed AS (
+            SELECT cust_id, redeem_date, course_id FROM Redeems AS R WHERE R.customer_id = customer_id
+        ), union_both AS (
+            SELECT cust_id, reg_date, course_id FROM get_registered
+            UNION
+            SELECT cust_id, redeem_date, course_id FROM get_redeemed
+        ) select course_id INTO course_id_1 FROM union_both ORDER BY reg_date DESC LIMIT 1;
+
+        --select second
+        WITH get_registered AS (
+            SELECT cust_id, reg_date, course_id FROM Registers AS RE WHERE Re.customer_id = customer_id
+        ), get_redeemed AS (
+            SELECT cust_id, redeem_date, course_id FROM Redeems AS R WHERE R.customer_id = customer_id
+        ), union_both AS (
+            SELECT cust_id, reg_date, course_id FROM get_registered
+            UNION
+            SELECT cust_id, redeem_date, course_id FROM get_redeemed
+        ) select course_id INTO course_id_2 FROM union_both ORDER BY reg_date DESC OFFSET 1 LIMIT 1;
+
+        --select third
+        WITH get_registered AS (
+            SELECT cust_id, reg_date, course_id FROM Registers AS RE WHERE Re.customer_id = customer_id
+        ), get_redeemed AS (
+            SELECT cust_id, redeem_date, course_id FROM Redeems AS R WHERE R.customer_id = customer_id
+        ), union_both AS (
+            SELECT cust_id, reg_date, course_id FROM get_registered
+            UNION
+            SELECT cust_id, redeem_date, course_id FROM get_redeemed
+        ) select course_id INTO course_id_3 FROM union_both ORDER BY reg_date DESC OFFSET 2 LIMIT 1;
+
+        -- get first course area
+        SELECT name INTO course_area_1 FROM Courses WHERE course_id = course_id_1;
+
+        -- get second course area
+        SELECT name INTO course_area_2 FROM Courses WHERE course_id = course_id_2;
+
+        -- get third course area
+        SELECT name INTO course_area_3 FROM Courses WHERE course_id = course_id_3;
+
+        -- latest redeem and register records both exists, check which is the latest, and whether it meets the requirement
+        IF (redeem_record IS NOT NULL AND register_record IS NOT NULL) THEN
+            -- get entry with the latest date
+            IF (redeem_record.redeem_date >= register_record.reg_date) THEN
+                last_purchase := redeem_record;
+                IF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_purchase.redeem_date::date)) * 12 +
+            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.redeem_date::date)) >= 6) THEN
+                    OPEN all_offering_curs;
+                    LOOP
+                        FETCH all_offering_curs INTO courses_record;
+                        EXIT WHEN NOT FOUND;
+
+                        IF (all_offering_curs.name <> course_area_1 AND all_offering_curs.name <> course_area_2
+                        AND all_offering_curs.name <> course_area_3) THEN
+                            CONTINUE;
+                        END IF;
+
+                        --if it is equal to one of the 3 course offerings, add it to the table
+                        --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
+                        course_area_A := all_offering_curs.name
+                        course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
+                        course_title_C : = all_offering_curs.title;
+                        launch_date_offering_C :=
+                        course_offering_deadline := all_offering_curs.registration_deadline;
+                        fees_course_offering := all_offering_curs.fees;
+                        RETURN NEXT;
+                    END LOOP;
+                    CLOSE all_offering_curs;
+                END IF;
+            ELSE
+                last_purchase := register_record;
+                IF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_purchase.reg_date::date)) * 12 +
+            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.reg_date::date)) >= 6) THEN
+                    OPEN all_offering_curs;
+                    LOOP
+                        FETCH all_offering_curs INTO courses_record;
+                        EXIT WHEN NOT FOUND;
+
+                        IF (all_offering_curs.name <> course_area_1 AND all_offering_curs.name <> course_area_2
+                        AND all_offering_curs.name <> course_area_3) THEN
+                            CONTINUE;
+                        END IF;
+
+                        --if it is equal to one of the 3 course offerings, add it to the table
+                        --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
+                        course_area_A := all_offering_curs.name
+                        course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
+                        course_title_C : = all_offering_curs.title;
+                        launch_date_offering_C :=
+                        course_offering_deadline := all_offering_curs.registration_deadline;
+                        fees_course_offering := all_offering_curs.fees;
+                        RETURN NEXT;
+                    END LOOP;
+                    CLOSE all_offering_curs;
+                END IF;
+            END IF;
+            CONTINUE;
+        ELSIF (redeem_record IS NULL AND register_record IS NOT NULL) THEN
+            last_purchase := register_record;
+            IF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_purchase.reg_date::date)) * 12 +
+            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.reg_date::date)) >= 6) THEN
+                    OPEN all_offering_curs;
+                    LOOP
+                        FETCH all_offering_curs INTO courses_record;
+                        EXIT WHEN NOT FOUND;
+
+                        IF (all_offering_curs.name <> course_area_1 AND all_offering_curs.name <> course_area_2
+                        AND all_offering_curs.name <> course_area_3) THEN
+                            CONTINUE;
+                        END IF;
+
+                        --if it is equal to one of the 3 course offerings, add it to the table
+                        --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
+                        course_area_A := all_offering_curs.name
+                        course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
+                        course_title_C : = all_offering_curs.title;
+                        launch_date_offering_C :=
+                        course_offering_deadline := all_offering_curs.registration_deadline;
+                        fees_course_offering := all_offering_curs.fees;
+                        RETURN NEXT;
+                    END LOOP;
+                    CLOSE all_offering_curs;
+            END IF;
+            CONTINUE;
+        ELSEIF (redeem_record IS NOT NULL AND register_record IS NULL) THEN
+            last_purchase := redeem_record;
+            IF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_purchase.redeem_date::date)) * 12 +
+            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.redeem_date::date)) >= 6) THEN
+                    OPEN all_offering_curs;
+                    LOOP
+                        FETCH all_offering_curs INTO courses_record;
+                        EXIT WHEN NOT FOUND;
+
+                        IF (all_offering_curs.name <> course_area_1 AND all_offering_curs.name <> course_area_2
+                        AND all_offering_curs.name <> course_area_3) THEN
+                            CONTINUE;
+                        END IF;
+
+                        --if it is equal to one of the 3 course offerings, add it to the table
+                        --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
+                        course_area_A := all_offering_curs.name
+                        course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
+                        course_title_C : = all_offering_curs.title;
+                        launch_date_offering_C :=
+                        course_offering_deadline := all_offering_curs.registration_deadline;
+                        fees_course_offering := all_offering_curs.fees;
+                        RETURN NEXT;
+                    END LOOP;
+                    CLOSE all_offering_curs;
+            END IF;
+            CONTINUE
+        ELSE
+            last_purchase := NULL;
+        END IF;
+
+        IF (last_purchase IS NULL) THEN
+            OPEN all_offering_curs;
+            LOOP
+                FETCH all_offering_curs INTO courses_record;
+                EXIT WHEN NOT FOUND;
+                --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
+                course_area_A := all_offering_curs.name
+                course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
+                course_title_C : = all_offering_curs.title;
+                launch_date_offering_C :=
+                course_offering_deadline := all_offering_curs.registration_deadline;
+                fees_course_offering := all_offering_curs.fees;
+                RETURN NEXT;
+            END LOOP;
+            CLOSE all_offering_curs;
+            CONTINUE;
+        END IF;
+    END LOOP;
+    CLOSE curs;
+END;
+$$ LANGUAGE plpgsql;
 
