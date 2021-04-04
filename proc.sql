@@ -24,7 +24,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
---in progress
+--in progress: done by joon leon in routine_7 pull request
 CREATE OR REPLACE FUNCTION get_available_instructors(course_identifier int, start_date date, end_date date) // check this
 RETURNS TABLE AS $$
 DECLARE
@@ -230,6 +230,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 --check: package_credit refers to the current amount of credit in active package, or is it the credit refunded (1 or 0).
+-- check: whether we should remove from registers and redeems, using check of launch_date and course_id and cust_id
 CREATE OR REPLACE PROCEDURE cancel_registration(cust_id int, course_id int, launch_date date)
 AS $$
 DECLARE
@@ -247,9 +248,13 @@ BEGIN
     IF EXISTS(SELECT * FROM Registers AS R WHERE R.cust_id = cust_id AND R.course_id = course_id AND R.launch_date = launch_date) THEN
         IF (start_session - current_date >= 7) THEN
             refund_amt := course_amount * 0.9;
+            --remove from registers table
+            DELETE FROM Registers AS R WHERE (R.cust_id = cust_id AND R.launch_date = launch_date AND R.course_id = course_id);
+            --insert into cancels table
             INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id, session_id, course_id, launch_date);
             COMMIT;
         ELSIF (start_session - current_date >= 0 and start_session - current_date < 7) THEN
+            DELETE FROM Registers AS R WHERE (R.cust_id = cust_id AND R.launch_date = launch_date AND R.course_id = course_id);
             INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id, session_id, course_id, launch_date);
             COMMIT;
         ELSE:
@@ -262,10 +267,14 @@ BEGIN
             UPDATE Buys AS B
             SET num_remaining_redemptions = num_remaining_redemptions + 1
             WHERE B.cust_id = cust_id AND (num_remaining_redemptions > 0 OR current_date - B.buy_date <= 7);
+
+            --remove entry from Redeem table
+            DELETE FROM Redeems AS R WHERE (R.cust_id = cust_id AND R.launch_date = launch_date AND R.course_id = course_id);
             --insert into cancels table
             INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id, session_id, course_id, launch_date);
             COMMIT;
         ELSIF (start_session - current_date >= 0 and start_session - current_date < 7) THEN
+            DELETE FROM Redeems AS R WHERE (R.cust_id = cust_id AND R.launch_date = launch_date AND R.course_id = course_id);
             INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id, session_id, course_id, launch_date);
             COMMIT;
         ELSE:
@@ -275,7 +284,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
---started defined based on day, will that be ok, or should I take into account of time?, might also want to refactor the code as it looks a bit bad
+--whether a course has started defined based on day, will that be ok, or should I take into account of time?, might also want to refactor the code as it looks a bit bad
 CREATE OR REPLACE PROCEDURE update_instructor(session_id int, course_id int, launch_date date, new_instructor_id int)
 AS $$
 DECLARE
@@ -435,7 +444,7 @@ $$ LANGUAGE plpgsql;
 
 --version 2, might want to check if record is null when empty relation is selected, dep on get_avail_course_offerings, cols of output!
 --also retrieved course_id using course_title, not sure if this is allowed
--- working on to see if the cursor for all_offering_curs should be changed, currently unable to get launch date and also course_title
+-- working on to see if the cursor for all_offering_curs should be changed, currently unable to get launch date and also course_id
 CREATE OR REPLACE FUNCTION promote_courses()
 RETURNS TABLE (customer_id int, customer_name text, course_area_A text,
 course_identifier_C int, course_title_C text, launch_date_offering_C date,
@@ -653,3 +662,42 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION retrieve_top_packages(N int)
+RETURNS TABLE (package_id int, total int) AS $$
+BEGIN
+    RETURN QUERY
+
+    WITH filter_packages AS (
+        SELECT * FROM (SELECT package_id, sale_start_date FROM Course_packages) AS X NATURAL JOIN Buys WHERE EXTRACT(YEAR FROM sale_start_date) = EXTRACT(YEAR FROM NOW())
+    ), packages_with_count AS (
+        SELECT package_id, count(package_id) FROM filter_packages GROUP BY package_id
+    ), top_N_count AS (
+        SELECT DISTINCT package_id, count(package_id) FROM filter_packages GROUP BY package_id LIMIT N
+    ) select * from packages_with_count natural join top_N_count;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION top_packages(N int)
+RETURNS TABLE (package_identifier int, free_sessions int, price numeric, start_date date, end_date date, num_sold int) AS $$
+DECLARE
+    curs CURSOR FOR (SELECT retrieve_top_packages(N));
+    r RECORD;
+    current_package_id int;
+BEGIN
+
+    OPEN curs;
+        LOOP
+            FETCH curs INTO r;
+            EXIT WHEN NOT FOUND;
+            current_package_id := curs.package_id;
+            package_identifier := current_package_id;
+            num_sold := curs.total;
+            free_sessions := (SELECT num_free_registrations FROM Course_packages WHERE package_id = current_package_id);
+            price := (SELECT price FROM Course_packages WHERE package_id = current_package_id);
+            start_date := (SELECT sale_start_date FROM Course_packages WHERE package_id = current_package_id);
+            end_date := (SELECT sale_end_date FROM Course_packages WHERE package_id = current_package_id);
+            RETURN NEXT;
+        END LOOP;
+    CLOSE curs;
+END;
+$$ LANGUAGE plpgsql;
