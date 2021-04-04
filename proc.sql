@@ -769,6 +769,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+--26
+
 --modify get_available_course_offerings_slightly
 CREATE OR REPLACE FUNCTION get_available_course_offerings_with_id_and_launch_date()
 RETURNS TABLE(_course_id INT, _launch_date DATE, _course_title TEXT, _course_area TEXT, _deadline DATE,
@@ -798,7 +800,25 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-/*
+--helper function to generate table
+CREATE OR REPLACE FUNCTION get_last_three_areas(_cust_id int)
+RETURNS TABLE(_course_area text) AS $$
+DECLARE
+    _number_registrations INT;
+    _row RECORD;
+BEGIN
+RETURN QUERY
+    WITH merge_registers_redeems AS (
+        SELECT cust_id, course_id, reg_date AS sign_up_date FROM Registers
+        UNION
+        SELECT cust_id, course_id, redeem_date FROM Redeems
+    ) SELECT name
+        FROM (merge_registers_redeems NATURAL JOIN Courses) AS X
+        WHERE cust_id = _cust_id ORDER BY sign_up_date DESC LIMIT 3;
+
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION promote_courses()
 RETURNS TABLE (customer_id int, customer_name text, course_area_A text,
 course_identifier_C int, course_title_C text, launch_date_offering_C date,
@@ -812,7 +832,7 @@ DECLARE
     last_register DATE;
     customer_name text;
     customer_id int;
-
+    _rows RECORD;
 BEGIN
     OPEN curs;
     LOOP
@@ -846,262 +866,24 @@ BEGIN
             (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.redeem_date::date)) >= 6) THEN
 
             --if less than 6 months and registered for a course before, find areas of last 3 sign-ups
-            WITH merge_registers_redeems AS (
-                SELECT cust_id, course_id, reg_date AS sign_up_date FROM Registers
-                UNION
-                SELECT cust_id, course_id, redeem_date FROM Redeems
-            ), get_areas AS (
-                SELECT name INTO last_register
-                FROM (merge_registers_redeems NATURAL JOIN Courses) AS X
-                WHERE cust_id = X.cust_id ORDER BY sign_up_date DESC LIMIT 3;
-            ) for _rows in select _course_id INT, _launch_date DATE, _course_title TEXT, _course_area TEXT, _deadline DATE,
-              _course_fees NUMERIC;
-
-
+            
+            for _rows in select *
+            FROM get_available_course_offerings_with_id_and_launch_date() NATURAL JOIN get_last_three_areas(customer_id) AS Z
+            LOOP 
+                course_identifier_C := _row.id;
+                launch_date_offering_C := _row.launch_date;
+                course_title_C := _row.title;
+                course_area_A := _row.name;
+                course_offering_deadline := _row.registration_deadline;
+                fees_course_offering := _row._course_fees;
+                RETURN NEXT;
+            END LOOP;
         END IF;
         CONTINUE;
     END LOOP;
     CLOSE curs;
 END;
-$$ LANGUAGE plpgsql;*/
-
---version 2, might want to check if record is null when empty relation is selected, dep on get_avail_course_offerings, cols of output!
---also retrieved course_id using course_title, not sure if this is allowed
--- working on to see if the cursor for all_offering_curs should be changed, currently unable to get launch date and also course_id
-
-/*
-CREATE OR REPLACE FUNCTION promote_courses()
-RETURNS TABLE (customer_id int, customer_name text, course_area_A text,
-course_identifier_C int, course_title_C text, launch_date_offering_C date,
-course_offering_deadline date, fees_course_offering date) AS $$
-DECLARE
-    curs CURSOR FOR (SELECT cust_id, name FROM Customers ORDER BY cust_id);
-    all_offering_curs CURSOR FOR (SELECT get_available_course_offerings());
-    r RECORD;
-    courses_record RECORD;
-    redeem_record RECORD;
-    register_record RECORD;
-    last_purchase RECORD;
-    customer_name text;
-    customer_id int;
-    course_id_1 int;
-    course_id_2 int;
-    course_id_3 int;
-    course_area_1 int;
-    course_area_2 int;
-    course_area_3 int;
-BEGIN
-    OPEN curs;
-    LOOP
-        FETCH curs INTO r;
-        EXIT WHEN NOT FOUND;
-        customer_name := r.name;
-        customer_id := r.id;
-
-        WITH check_redeem AS (
-            SELECT * FROM Redeems AS R WHERE R.cust_id = customer_id ORDER BY R.redeem_date DESC LIMIT 1
-        ) SELECT * INTO redeem_record FROM check_redeem;
-
-        WITH check_register AS (
-            SELECT * FROM Registers AS Re WHERE Re.cust_id = customer_id ORDER BY Re.reg_date DESC LIMIT 1
-        ) SELECT * INTO register_record FROM check_register;
-
-        --get three latest course_area
-
-        --select first
-        WITH get_registered AS (
-            SELECT cust_id, reg_date, course_id FROM Registers AS RE WHERE Re.customer_id = customer_id
-        ), get_redeemed AS (
-            SELECT cust_id, redeem_date, course_id FROM Redeems AS R WHERE R.customer_id = customer_id
-        ), union_both AS (
-            SELECT cust_id, reg_date, course_id FROM get_registered
-            UNION
-            SELECT cust_id, redeem_date, course_id FROM get_redeemed
-        ) select course_id INTO course_id_1 FROM union_both ORDER BY reg_date DESC LIMIT 1;
-
-        --select second
-        WITH get_registered AS (
-            SELECT cust_id, reg_date, course_id FROM Registers AS RE WHERE Re.customer_id = customer_id
-        ), get_redeemed AS (
-            SELECT cust_id, redeem_date, course_id FROM Redeems AS R WHERE R.customer_id = customer_id
-        ), union_both AS (
-            SELECT cust_id, reg_date, course_id FROM get_registered
-            UNION
-            SELECT cust_id, redeem_date, course_id FROM get_redeemed
-        ) select course_id INTO course_id_2 FROM union_both ORDER BY reg_date DESC OFFSET 1 LIMIT 1;
-
-        --select third
-        WITH get_registered AS (
-            SELECT cust_id, reg_date, course_id FROM Registers AS RE WHERE Re.customer_id = customer_id
-        ), get_redeemed AS (
-            SELECT cust_id, redeem_date, course_id FROM Redeems AS R WHERE R.customer_id = customer_id
-        ), union_both AS (
-            SELECT cust_id, reg_date, course_id FROM get_registered
-            UNION
-            SELECT cust_id, redeem_date, course_id FROM get_redeemed
-        ) select course_id INTO course_id_3 FROM union_both ORDER BY reg_date DESC OFFSET 2 LIMIT 1;
-
-        -- get first course area
-        SELECT name INTO course_area_1 FROM Courses WHERE course_id = course_id_1;
-
-        -- get second course area
-        SELECT name INTO course_area_2 FROM Courses WHERE course_id = course_id_2;
-
-        -- get third course area
-        SELECT name INTO course_area_3 FROM Courses WHERE course_id = course_id_3;
-
-        -- latest redeem and register records both exists, check which is the latest, and whether it meets the requirement
-        IF (redeem_record IS NOT NULL AND register_record IS NOT NULL) THEN
-            -- get entry with the latest date
-            IF (redeem_record.redeem_date >= register_record.reg_date) THEN
-                last_purchase := redeem_record;
-                IF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_purchase.redeem_date::date)) * 12 +
-            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.redeem_date::date)) >= 6) THEN
-                    OPEN all_offering_curs;
-                    LOOP
-                        FETCH all_offering_curs INTO courses_record;
-                        EXIT WHEN NOT FOUND;
-
-                        IF (all_offering_curs.name <> course_area_1 AND all_offering_curs.name <> course_area_2
-                        AND all_offering_curs.name <> course_area_3) THEN
-                            CONTINUE;
-                        END IF;
-
-                        --if it is equal to one of the 3 course offerings, add it to the table
-                        --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
-                        course_area_A := all_offering_curs.name
-                        course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
-                        course_title_C : = all_offering_curs.title;
-                        launch_date_offering_C :=
-                        course_offering_deadline := all_offering_curs.registration_deadline;
-                        fees_course_offering := all_offering_curs.fees;
-                        RETURN NEXT;
-                    END LOOP;
-                    CLOSE all_offering_curs;
-                END IF;
-            ELSE
-                last_purchase := register_record;
-                IF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_purchase.reg_date::date)) * 12 +
-            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.reg_date::date)) >= 6) THEN
-                    OPEN all_offering_curs;
-                    LOOP
-                        FETCH all_offering_curs INTO courses_record;
-                        EXIT WHEN NOT FOUND;
-
-                        IF (all_offering_curs.name <> course_area_1 AND all_offering_curs.name <> course_area_2
-                        AND all_offering_curs.name <> course_area_3) THEN
-                            CONTINUE;
-                        END IF;
-
-                        --if it is equal to one of the 3 course offerings, add it to the table
-                        --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
-                        course_area_A := all_offering_curs.name
-                        course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
-                        course_title_C : = all_offering_curs.title;
-                        launch_date_offering_C :=
-                        course_offering_deadline := all_offering_curs.registration_deadline;
-                        fees_course_offering := all_offering_curs.fees;
-                        RETURN NEXT;
-                    END LOOP;
-                    CLOSE all_offering_curs;
-                END IF;
-            END IF;
-            CONTINUE;
-        ELSIF (redeem_record IS NULL AND register_record IS NOT NULL) THEN
-            last_purchase := register_record;
-            IF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_purchase.reg_date::date)) * 12 +
-            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.reg_date::date)) >= 6) THEN
-                    OPEN all_offering_curs;
-                    LOOP
-                        FETCH all_offering_curs INTO courses_record;
-                        EXIT WHEN NOT FOUND;
-
-                        IF (all_offering_curs.name <> course_area_1 AND all_offering_curs.name <> course_area_2
-                        AND all_offering_curs.name <> course_area_3) THEN
-                            CONTINUE;
-                        END IF;
-
-                        --if it is equal to one of the 3 course offerings, add it to the table
-                        --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
-                        course_area_A := all_offering_curs.name
-                        course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
-                        course_title_C : = all_offering_curs.title;
-                        launch_date_offering_C :=
-                        course_offering_deadline := all_offering_curs.registration_deadline;
-                        fees_course_offering := all_offering_curs.fees;
-                        RETURN NEXT;
-                    END LOOP;
-                    CLOSE all_offering_curs;
-            END IF;
-            CONTINUE;
-        ELSEIF (redeem_record IS NOT NULL AND register_record IS NULL) THEN
-            last_purchase := redeem_record;
-            IF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_purchase.redeem_date::date)) * 12 +
-            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.redeem_date::date)) >= 6) THEN
-                    OPEN all_offering_curs;
-                    LOOP
-                        FETCH all_offering_curs INTO courses_record;
-                        EXIT WHEN NOT FOUND;
-
-                        IF (all_offering_curs.name <> course_area_1 AND all_offering_curs.name <> course_area_2
-                        AND all_offering_curs.name <> course_area_3) THEN
-                            CONTINUE;
-                        END IF;
-
-                        --if it is equal to one of the 3 course offerings, add it to the table
-                        --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
-                        course_area_A := all_offering_curs.name
-                        course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
-                        course_title_C : = all_offering_curs.title;
-                        launch_date_offering_C :=
-                        course_offering_deadline := all_offering_curs.registration_deadline;
-                        fees_course_offering := all_offering_curs.fees;
-                        RETURN NEXT;
-                    END LOOP;
-                    CLOSE all_offering_curs;
-            END IF;
-            CONTINUE
-        ELSE
-            last_purchase := NULL;
-        END IF;
-
-        IF (last_purchase IS NULL) THEN
-            OPEN all_offering_curs;
-            LOOP
-                FETCH all_offering_curs INTO courses_record;
-                EXIT WHEN NOT FOUND;
-                --rethink how to get course identifier and launch date, not found in all available offerings perhaps change cursor..
-                course_area_A := all_offering_curs.name
-                course_identifier_C := (SELECT course_id FROM Courses AS C WHERE C.title = all_offering_curs.title AND C.name = course_area_A);
-                course_title_C : = all_offering_curs.title;
-                launch_date_offering_C :=
-                course_offering_deadline := all_offering_curs.registration_deadline;
-                fees_course_offering := all_offering_curs.fees;
-                RETURN NEXT;
-            END LOOP;
-            CLOSE all_offering_curs;
-            CONTINUE;
-        END IF;
-    END LOOP;
-    CLOSE curs;
-END;
 $$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION retrieve_top_packages(N int)
-RETURNS TABLE (package_id int, total int) AS $$
-BEGIN
-    RETURN QUERY
-
-    WITH filter_packages AS (
-        SELECT * FROM (SELECT package_id, sale_start_date FROM Course_packages) AS X NATURAL JOIN Buys WHERE EXTRACT(YEAR FROM sale_start_date) = EXTRACT(YEAR FROM NOW())
-    ), packages_with_count AS (
-        SELECT package_id, count(package_id) FROM filter_packages GROUP BY package_id
-    ), top_N_count AS (
-        SELECT DISTINCT package_id, count(package_id) FROM filter_packages GROUP BY package_id LIMIT N
-    ) select * from packages_with_count natural join top_N_count;
-END;
-$$ LANGUAGE plpgsql;
-*/
 
 -- 27
 CREATE OR REPLACE FUNCTION top_packages(N int)
@@ -1132,9 +914,9 @@ $$ LANGUAGE plpgsql;
 -- 1, 4, 8, 11, 12, 16, 18, 23, 24, 30
 
 -- 1
-CREATE OR REPLACE FUNCTION add_employee(IN em_name TEXT, IN em_address TEXT,
+CREATE OR REPLACE PROCEDURE add_employee(IN em_name TEXT, IN em_address TEXT,
 IN em_phone TEXT, IN em_email TEXT, IN join_date date, IN salary_type TEXT,
-IN rate INT, IN employee_type TEXT, IN em_areas text[]) RETURNS NULL AS $$
+IN rate INT, IN employee_type TEXT, IN em_areas text[]) AS $$
 
 DECLARE
     employee_id INT;
@@ -1142,10 +924,10 @@ DECLARE
 
 BEGIN
     SELECT case
-        when max(eid) is null then 1000
+        when max(eid) is null then 0
         else max(eid)
         end into employee_id FROM Employees;
-
+    
     employee_id := employee_id + 1;
 
     INSERT INTO Employees
@@ -1154,18 +936,18 @@ BEGIN
     IF salary_type = 'full_time' THEN
         INSERT INTO Full_time_Emp
         VALUES (rate, employee_id);
-
-    ELSE IF salary_type = 'part_time' THEN
+    
+    elseif salary_type = 'part_time' THEN
         INSERT INTO Part_time_Emp
         VALUES (rate, employee_id);
-
+    
     END IF;
 
-    IF employee_type = 'Administrator' THEN
+    IF employee_type = 'Administrator' THEN 
         INSERT INTO Administrators
         VALUES (employee_id);
 
-    ELSE IF employee_type = 'Manager' THEN
+    elseif employee_type = 'Manager' THEN
         INSERT INTO Managers
         VALUES (employee_id);
 
@@ -1175,19 +957,19 @@ BEGIN
             INSERT INTO Course_areas
             VALUES (area, employee_id);
         END LOOP;
-
-    ELSE IF employee_type = 'Instructor' THEN
+    
+    elseif employee_type = 'Instructor' THEN
         INSERT INTO Instructors
         VALUES (employee_id);
 
         IF salary_type = 'full_time' THEN
             INSERT INTO Full_time_Instructors
             VALUES (employee_id);
-
-        ELSE IF salary_type = 'part_time' THEN
+        
+        elseif salary_type = 'part_time' THEN
             INSERT INTO Part_time_Instructors
             VALUES (employee_id);
-
+        
         END IF;
 
         FOREACH area IN ARRAY em_areas
@@ -1195,28 +977,28 @@ BEGIN
             INSERT INTO Specializes
             VALUES (employee_id, area);
         END LOOP;
-
+    
     END IF;
 END;
 $$ LANGUAGE plpgsql;
 
 -- 4
-create or replace function update_credit_card(in customer_id int, in c_number int,
-in ex_date date, in c_cvv int) returns null as $$
+create or replace procedure update_credit_card(in customer_id int, in c_number int,
+in ex_date date, in c_cvv int) as $$
 
 BEGIN
     INSERT INTO Credit_cards
-    VALUES (c_number, current_date, c_cvv, ex_date);
+    VALUES (c_number, c_cvv, ex_date);
 
     INSERT INTO Owns
-    VALUES (c_number, customer_id);
+    VALUES (c_number, customer_id, current_date);
 END;
 $$ LANGUAGE plpgsql;
 
 
 -- 8
 /* session duration's type is 'interval'. */
-/* Exclude all rooms on that date that are occupied during the given session's
+/* Exclude all rooms on that date that are occupied during the given session's 
 time interval. */
 create or replace function find_rooms(in s_date date, in s_hour time, in s_duration interval)
 returns table(rid int) as $$
@@ -1234,17 +1016,17 @@ $$ LANGUAGE plpgsql;
 
 
 -- 11
-create or replace function add_course_package(in p_name text, in n_free int,
-in s_date date, in e_date date, in c_price numeric) returns null as $$
+create or replace procedure add_course_package(in p_name text, in n_free int, 
+in s_date date, in e_date date, in c_price numeric) as $$
 DECLARE
     cid INT;
 
 BEGIN
     SELECT case
-        when max(package_id) is null then 1000
+        when max(package_id) is null then 0
         else max(package_id)
         end into cid FROM Course_packages;
-
+    
     cid := cid + 1;
 
     INSERT INTO Course_packages
@@ -1275,7 +1057,7 @@ BEGIN
     SELECT seating_capacity INTO s_capacity FROM Course_offerings
     WHERE l_date = launch_date AND cid = course_id;
 
-    SELECT session_date, start_time, name as instructor,
+    SELECT session_date, start_time, name as instructor, 
     s_capacity - count(distinct cust_id) as num_remaining_seats
     FROM (Sessions natural join (SELECT eid, name FROM Employees) as foo1)
         natural join (SELECT cust_id, sid FROM Registers) as foo2
@@ -1291,13 +1073,16 @@ returns table(course_name text, course_fee numeric, session_date date,
 start_time time, session_duration interval, instructor text) as $$
 
 BEGIN
-    SELECT cname, fees, session_date, start_time,
+    WITH r1 AS (SELECT cust_id, sid, course_id, launch_date FROM Registers),
+    co1 AS (SELECT course_id, launch_date, fees FROM Course_offerings),
+    c1 AS (SELECT course_id, name as cname FROM Courses),
+    s1 AS (SELECT sid, session_date, start_time, end_time, eid, launch_date, course_id FROM Sessions),
+    e1 AS (SELECT eid, name as ename FROM Employees)
+    SELECT cname, fees, session_date, start_time, 
     end_time - start_time as session_duration, ename
-    FROM (SELECT cust_id, sid, course_id, launch_date FROM Registers) as r1 natural join
-    ((SELECT course_id, launch_date, fees FROM Course_offerings) as co1
-    natural join (SELECT course_id, name as cname FROM Courses) as c1)) natural join
-    ((SELECT sid, session_date, start_time, end_time, eid, launch_date, course_id FROM Sessions) as s1
-    natural join (SELECT eid, name as ename FROM Employees) as e1)
+    FROM r1 natural join
+    (co1 natural join c1) natural join
+    (s1 natural join e1)
     WHERE cust_id = cid
     ORDER BY session_date, start_time asc;
 END;
@@ -1305,8 +1090,7 @@ $$ LANGUAGE plpgsql;
 
 
 --23
-create or replace function remove_session(in l_date date, in cid int, in session_id int)
-returns null as $$
+create or replace procedure remove_session(in l_date date, in cid int, in session_id int) as $$
 
 DECLARE
     num_registrations int;
@@ -1319,22 +1103,25 @@ BEGIN
     SELECT session_date INTO session_start_date FROM Sessions
     WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
 
-    if num_registrations > 0 then return null;
+    if num_registrations > 0 then 
+        raise exception 'Session cannot be removed. Number of registrations more than 0.';
 
-    else if session_start_date <= current_date then return null;
-
-    else DELETE FROM Sessions
-    WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
+    elseif session_start_date <= current_date then
+        raise exception 'Session cannot be removed. Session has already started.';
 
     end if;
+
+    DELETE FROM Sessions
+    WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
+
 END;
 $$ LANGUAGE plpgsql;
 
 --24
 /* note: new_session_duration not specified in problem statement. */
-create or replace function add_session(in l_date date, in cid int, in new_session_id int,
+create or replace procedure add_session(in l_date date, in cid int, in new_session_id int,
 in new_session_day date, in new_session_start_hour time, in new_session_duration interval,
-in instructor_id int, in room_id int) returns null as $$
+in instructor_id int, in room_id int) as $$
 
 DECLARE
     deadline date;
@@ -1342,8 +1129,8 @@ DECLARE
     count_eid int;
     new_sid int;
 
-BEGIN
-    SELECT registration_deadline INTO deadline
+BEGIN 
+    SELECT registration_deadline INTO deadline 
     FROM Course_offerings WHERE launch_date = l_date AND course_id = cid;
 
     SELECT count(rid) into count_rid
@@ -1354,24 +1141,31 @@ BEGIN
     FROM find_instructors(cid, new_session_day, new_session_start_hour)
     WHERE eid = instructor_id;
 
-    if deadline < current_date then return null;
-    else if count_rid <= 0 then return null;
-    else if count_eid <= 0 then return null;
-    else
-        SELECT case
-            when max(sid) is null then 1000
-            else max(sid)
-            end into new_sid
-        FROM Sessions
-        WHERE launch_date = l_date AND course_id = cid;
+    if deadline < current_date then
+        raise exception 'Course offering deadline has passed.';
 
-        new_sid := new_sid + 1;
+    elseif count_rid <= 0 then
+        raise exception 'Room is occupied.';
 
-        INSERT INTO Sessions
-        VALUES (new_sid, new_session_day, new_session_start_hour,
-        new_session_start_hour + new_session_duration, room_id, instructor_id,
-        l_date, cid);
+    elseif count_eid <= 0 then
+        raise exception 'Instructor is busy.';
+
     end if;
+
+    SELECT case
+        when max(sid) is null then 0
+        else max(sid)
+        end into new_sid
+    FROM Sessions
+    WHERE launch_date = l_date AND course_id = cid;
+
+    new_sid := new_sid + 1;
+
+    INSERT INTO Sessions
+    VALUES (new_sid, new_session_day, new_session_start_hour,
+    new_session_start_hour + new_session_duration, room_id, instructor_id,
+    l_date, cid);
+
 END;
 $$ LANGUAGE plpgsql;
 
@@ -1379,58 +1173,45 @@ $$ LANGUAGE plpgsql;
 create or replace function view_manager_report()
 returns table(manager_name text, num_course_areas int, num_course_offerings int,
 total_registration_fees numeric, best_selling_course_offering text) as $$
-
-DECLARE
-    course_offerings_and_fees table(launch_date date, course_id int,
-    eid int, registration_fees numeric);
-
-    course_offerings_and_redemptions table(launch_date date, course_id int,
-    eid int, redemption_fees numeric);
-
-    course_offerings_and_total_fees table(launch_date date, course_id int,
-    eid int, total_fees numeric);
-
-    manager_and_best_selling table(eid int, title text);
-
-BEGIN
+    
+BEGIN 
+    WITH course_offerings_and_fees AS (
     SELECT co1.launch_date as launch_date, co1.course_id as course_id,
-    co1.mid as eid, (count(*) * co1.fees) as registration_fees
+    co1.mid as eid, (count(*) * co1.fees) as registration_fees 
     FROM Course_offerings as co1, Sessions as s1, Registers as r1
-    INTO course_offerings_and_fees
     WHERE co1.launch_date = s1.launch_date AND co1.course_id = s1.course_id
     AND r1.launch_date = co1.launch_date AND r1.course_id = co1.course_id
-    AND r1.sid = s1.sid
+    AND r1.sid = s1.sid 
     AND extract(year from co1.end_date) = extract(year from current_date)
-    GROUP BY co1.launch_date, co1.course_id, co1.mid;
+    GROUP BY co1.launch_date, co1.course_id, co1.mid), 
 
+    course_offerings_and_redemptions AS (
     SELECT co1.launch_date as launch_date, co1.course_id as course_id,
-    co1.mid as eid, (count(*) * r1.p1) as redemption_fees
-    FROM Course_offerings as co1, Sessions as s1, (Redeems natural join
+    co1.mid as eid, (count(*) * r1.p1) as redemption_fees 
+    FROM Course_offerings as co1, Sessions as s1, (Redeems natural join 
     (SELECT package_id, round(price/num_free_registrations) as p1 FROM Course_packages) as cp1) as r1
-    INTO course_offerings_and_redemptions
     WHERE co1.launch_date = s1.launch_date AND co1.course_id = s1.course_id
     AND r1.launch_date = co1.launch_date AND r1.course_id = co1.course_id
     AND r1.sid = s1.sid
     AND extract(year from co1.end_date) = extract(year from current_date)
-    GROUP BY co1.launch_date, co1.course_id, co1.mid;
+    GROUP BY co1.launch_date, co1.course_id, co1.mid),
 
+    course_offerings_and_total_fees AS (
     SELECT launch_date, course_id, eid, (redemption_fees + registration_fees) as total_fees
-    FROM course_offerings_and_fees natural join course_offerings_and_redemptions
-    INTO course_offerings_and_total_fees;
+    FROM course_offerings_and_fees natural join course_offerings_and_redemptions),
 
+    manager_and_best_selling AS (
     SELECT co1.eid, co1.title
     FROM (course_offerings_and_total_fees
     natural join (SELECT course_id, title FROM Courses) as c1) as co1
-    INTO manager_and_best_selling
-    WHERE co1.total_fees >= SELECT(max(total_fees)
+    WHERE co1.total_fees >= (SELECT max(total_fees)
     FROM course_offerings_and_total_fees co2
-    WHERE co1.eid = co2.eid);
-
+    WHERE co1.eid = co2.eid))
 
     SELECT m_name, count(a_name), count(launch_date, course_id), sum(total_fees), title
-    FROM ((((Managers natural join (SELECT name as m_name, eid FROM Employees) as e1)
+    FROM ((((Managers natural join (SELECT name as m_name, eid FROM Employees) as e1) 
     natural left join (SELECT name as a_name, eid FROM course_areas) as ca1))
-    natural left join course_offerings_and_total_fees)
+    natural left join course_offerings_and_total_fees) 
     natural left join manager_and_best_selling
     GROUP BY eid, m_name
     ORDER BY m_name asc;
@@ -1453,67 +1234,72 @@ DECLARE
 	r RECORD;
 	start_day date;
 	start_hour time;
+	num_part_time_hours int;
 
 BEGIN
 	OPEN curs;
 	LOOP
 		FETCH curs INTO r;
 		EXIT WHEN NOT FOUND;
-
-			eid := r.eid;
-			name := r.name;
-			start_day := start_date;
-
-			while start_day <= end_date
-			LOOP
-
 				select sum(DATE_PART('hour', end_time - start_time) ) into num_hours
 				from Sessions S1
 				where S1.eid = r.eid
 				and extract(month from S1.session_date) = extract(month from start_day)
 				and extract(year from S1.session_date) = extract(year from start_day);
-				day := start_day;
+			
+			IF EXISTS (select 1 from Part_time_Instructors where eid = r.eid) and num_hours > 30 THEN
 
-				IF NOT EXISTS (select 1
-					from Sessions S1
-					where S1.eid = r.eid
-					and S1.course_id = cid
-					and S1.session_date = start_day) THEN
-						available_hours := array ['0900', '1000', '1100', '1200', '1300', '1400', '1500', '1600', '1700'];
+			ELSE
+				eid := r.eid;
+				name := r.name;
+				start_day := start_date;
+			
+				while start_day <= end_date
+				LOOP
+
+					day := start_day;
+
+					IF NOT EXISTS (select 1 
+						from Sessions S1 
+						where S1.eid = r.eid 
+						and S1.course_id = cid 
+						and S1.session_date = start_day) THEN
+							available_hours := array ['0900', '1000', '1100', '1200', '1300', '1400', '1500', '1600', '1700'];
+							RETURN NEXT;
+					ELSE
+						start_hour := '0900';
+						available_hours := array[];
+
+						while start_hour < '1800'
+						LOOP
+
+							IF NOT EXISTS (select 1 
+								from Sessions S1 
+								where S1.eid = r.eid 
+								and S1.course_id = cid  
+								and S1.session_date = r.session_date 
+								and (start_hour >= r.start_time and start_hour <= r.end_time)
+								or DATE_PART('hour', r.start_time - start_hour) < 1
+								or DATE_PART('hour', start_hour - r.end_time) < 1) THEN
+									available_hours := array_append(available_hours, start_hour);
+							END IF;
+
+							IF start_hour = '1100' THEN
+								start_hour := start_hour + '3 hour'::interval;
+							ELSE
+								start_hour := start_hour + '1 hour'::interval;
+							END IF;
+
+						END LOOP;
+
 						RETURN NEXT;
-				ELSE
-					start_hour := '0900';
-					available_hours := array[];
 
-					while start_hour < '1800'
-					LOOP
+					END IF;
 
-						IF NOT EXISTS (select 1
-							from Sessions S1
-							where S1.eid = r.eid
-							and S1.course_id = cid
-							and S1.session_date = r.session_date
-							and (start_hour >= r.start_time and start_hour <= r.end_time)
-							or DATE_PART('hour', r.start_time - start_hour) < 1
-							or DATE_PART('hour', start_hour - r.end_time) < 1) THEN
-								available_hours := array_append(available_hours, start_hour);
-						END IF;
+					start_day := start_day + '1 day'::interval;
 
-						IF start_hour = '1100' THEN
-							start_hour := start_hour + '3 hour'::interval;
-						ELSE
-							start_hour := start_hour + '1 hour'::interval;
-						END IF;
-
-					END LOOP;
-
-					RETURN NEXT;
-
-				END IF;
-
-				start_day := start_day + '1 day'::interval;
-
-			END LOOP;
+				END LOOP;
+			END IF;
 	END LOOP;
 	CLOSE curs;
 END;
