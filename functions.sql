@@ -70,15 +70,15 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 4
-create or replace function update_credit_card(in customer_id int, in c_number int,
-in ex_date date, in c_cvv int) returns null as $$
+create or replace procedure update_credit_card(in customer_id int, in c_number int,
+in ex_date date, in c_cvv int) as $$
 
 BEGIN
     INSERT INTO Credit_cards
-    VALUES (c_number, current_date, c_cvv, ex_date);
+    VALUES (c_number, c_cvv, ex_date);
 
     INSERT INTO Owns
-    VALUES (c_number, customer_id);
+    VALUES (c_number, customer_id, current_date);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -103,8 +103,8 @@ $$ LANGUAGE plpgsql;
 
 
 -- 11
-create or replace function add_course_package(in p_name text, in n_free int, 
-in s_date date, in e_date date, in c_price numeric) returns null as $$
+create or replace procedure add_course_package(in p_name text, in n_free int, 
+in s_date date, in e_date date, in c_price numeric) as $$
 DECLARE
     cid INT;
 
@@ -174,8 +174,7 @@ $$ LANGUAGE plpgsql;
 
 
 --23
-create or replace function remove_session(in l_date date, in cid int, in session_id int)
-returns null as $$
+create or replace procedure remove_session(in l_date date, in cid int, in session_id int) as $$
 
 DECLARE
     num_registrations int;
@@ -201,9 +200,9 @@ $$ LANGUAGE plpgsql;
 
 --24
 /* note: new_session_duration not specified in problem statement. */
-create or replace function add_session(in l_date date, in cid int, in new_session_id int,
+create or replace procedure add_session(in l_date date, in cid int, in new_session_id int,
 in new_session_day date, in new_session_start_hour time, in new_session_duration interval,
-in instructor_id int, in room_id int) returns null as $$
+in instructor_id int, in room_id int) as $$
 
 DECLARE
     deadline date;
