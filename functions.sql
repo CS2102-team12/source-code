@@ -11,7 +11,7 @@ DECLARE
 
 BEGIN
     SELECT case
-        when max(eid) is null then 1000
+        when max(eid) is null then 0
         else max(eid)
         end into employee_id FROM Employees;
     
@@ -110,7 +110,7 @@ DECLARE
 
 BEGIN
     SELECT case
-        when max(package_id) is null then 1000
+        when max(package_id) is null then 0
         else max(package_id)
         end into cid FROM Course_packages;
     
@@ -227,7 +227,7 @@ BEGIN
     else if count_eid <= 0 then return null;
     else
         SELECT case
-            when max(sid) is null then 1000
+            when max(sid) is null then 0
             else max(sid)
             end into new_sid
         FROM Sessions
