@@ -24,46 +24,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
---in progress: done by joon leon in routine_7 pull request
-CREATE OR REPLACE FUNCTION get_available_instructors(course_identifier int, start_date date, end_date date) // check this
-RETURNS TABLE AS $$
-DECLARE
-    start_month int := SELECT EXTRACT(MONTH FROM start_date);
-    end_month int := SELECT EXTRACT(MONTH FROM end_date);
-    course_area_chosen text := SELECT course_area FROM Courses WHERE course_id = course_identifier;
-    curs CURSOR FOR (
-    SELECT eid, session_date, start_time, end_time FROM (SELECT * FROM (Instructors natural join Specializes) WHERE name = course_area_chosen) AS X natural join Sessions AS Y;
-    );
-    instructor_id int;
-    total_hours int;
-    course_day int;
-
-BEGIN
-END;
-$$ LANGUAGE plpgsql;
-
 -- done
 CREATE TYPE information_session AS (session_date date, start_hour time, room_id int);
 
-CREATE OR REPLACE PROCEDURE add_course_offering(course_id int, launch_date date,
+CREATE OR REPLACE PROCEDURE add_course_offering(course_id_in int, launch_date_in date,
 fees numeric, deadline date, target_num int, admin_id int, VARIADIC sessions information_session[])
 AS $$
 DECLARE
-    end_time time;
+    end_time_derv time;
     seating_capacity int;
     room_id int;
     all_instructors boolean := TRUE;
     earliest_session information_session := $7[0];
     latest_session information_session := $7[0];
     current_session_number int := 1;
-    duration int := (SELECT duration FROM Courses AS C WHERE C.course_id = course_id);
-    course_area text := (SELECT name FROM Courses AS C WHERE C.course_id = course_id);
+    duration int := (SELECT duration FROM Courses AS C WHERE C.course_id = course_id_in);
+    course_area text := (SELECT name FROM Courses AS C WHERE C.course_id = course_id_in);
     mid int := (SELECT eid FROM Course_areas WHERE name = course_area);
     possible_instructor int;
     new_session information_session;
+    start_time_derv time;
 BEGIN
 
-    IF EXISTS (SELECT 1 FROM Course_offerings AS CO WHERE CO.launch_date = launch_date AND CO.course_id = course_id) THEN
+    IF EXISTS (SELECT 1 FROM Course_offerings AS CO WHERE CO.launch_date = launch_date_in AND CO.course_id = course_id_in) THEN
         RETURN;
     END IF;
 
@@ -81,26 +64,29 @@ BEGIN
         END IF;
 
         --check if weekday
-        IF (EXTRACT(dow from new_session.session_date::timestamp) = 6 OR EXTRACT(dow from new_session.session_date::timestamp) == 7) THEN
+        IF (EXTRACT(dow FROM new_session.session_date::timestamp) = 6 OR EXTRACT(dow FROM new_session.session_date::timestamp) = 7) THEN
             ROLLBACK;
             RETURN;
         END IF;
 
+        start_time_derv := new_session.start_hour;
+        end_time_derv := new_session.start_hour + duration;
         room_id := new_session.room_id;
         seating_capacity := seating_capacity + (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
         -- check if room currently has a clashing class
-        IF EXISTS(SELECT 1 FROM Sessions AS S WHERE S.session_date = new_session.session_date AND S.rid = room_id AND (S.start_time < new_session.start_hour OR S.end_time > end_time)) THEN
+        IF EXISTS(SELECT 1 FROM Sessions AS S WHERE S.session_date = new_session.session_date AND S.rid = room_id AND
+        (S.start_time < new_session.start_hour OR S.end_time > end_time_derv)) THEN
             ROLLBACK;
             RETURN;
         END IF;
 
 
-        end_time := start_time + duration;
+
         --check if session is valid
-        IF ((new_session.start_time >= '0900' and start_time < '1200' or start_time >= '1400' and start_time < '1800') AND (end_time <= '1800' OR (end_time <= '1200' AND end_time >= '1400'))) THEN
+        IF (((new_session.start_time >= '0900' and new_session.start_time < '1200') or (new_session.start_time >= '1400' and new_session.start_time < '1800')) AND (new_session.end_time <= '1800' OR (new_session.end_time <= '1200' AND new_session.end_time >= '1400'))) THEN
 
             --check if there is session from same course offering with the same day and time
-            IF EXISTS (SELECT 1 FROM Sessions AS S WHERE S.course_id = course_id AND S.launch_date = launch_date AND S.start_time = new_session.start_time) THEN
+            IF EXISTS (SELECT 1 FROM Sessions AS S WHERE S.course_id = course_id_in AND S.launch_date = launch_date_in AND S.start_time = new_session.start_time) THEN
                 ROLLBACK;
                 RETURN;
             END IF;
@@ -111,7 +97,7 @@ BEGIN
                 SELECT *, (end_time - start_time) AS duration FROM (Part_time_Instructors natural join Specializes) AS X WHERE X.name = course_area
                 AND (EXTRACT(MONTH FROM session_date) = EXTRACT(MONTH FROM new_session.session_date) AND (end_time - start_time) + duration <= 30)
             ), Instructor_sessions AS (
-                SELECT * FROM (Part_time_instructor_Specializes NATURAL LEFT JOIN Sessions) AS merging WHERE merging.start_time < new_session.start_hour AND (merging.end_time + 1) < end_time
+                SELECT * FROM (Part_time_instructor_Specializes NATURAL LEFT JOIN Sessions) AS merging WHERE merging.start_time < new_session.start_hour AND (merging.end_time + 1) < end_time_derv
             ), Part_time_filtered AS (
                 SELECT * FROM Part_time_instructor_Specializes NATURAL JOIN Instructor_sessions
             ) SELECT eid INTO possible_instructor FROM Part_time_filtered LIMIT 1;
@@ -120,7 +106,7 @@ BEGIN
                 WITH Full_time_instructor_Specializes AS(
                     SELECT * FROM (Full_time_Instructors natural join Specializes) AS X WHERE X.name = course_area
                 ), Instructor_sessions AS (
-                    SELECT * FROM (Full_time_instructor_Specializes NATURAL LEFT JOIN Sessions) AS merging WHERE merging.start_time < new_session.start_hour AND (merging.end_time + 1) < end_time
+                    SELECT * FROM (Full_time_instructor_Specializes NATURAL LEFT JOIN Sessions) AS merging WHERE merging.start_time < new_session.start_hour AND (merging.end_time + 1) < end_time_derv
                 ) SELECT eid INTO possible_instructor FROM Instructor_sessions LIMIT 1;
             END IF;
 
@@ -134,7 +120,7 @@ BEGIN
 
         --insert this session into Sessions table
         INSERT INTO Sessions(sid, session_date, start_time, end_time, rid, eid, launch_date, course_id)
-        VALUES (current_session_number, new_session.session_date, new_session.start_hour, end_time, room_id, possible_instructor, launch_date, course_id);
+        VALUES (current_session_number, new_session.session_date, new_session.start_hour, end_time_derv, room_id, possible_instructor, launch_date_in, course_id_in);
 
     END LOOP;
 
@@ -146,7 +132,7 @@ BEGIN
 
     IF (all_instructors) THEN
         INSERT INTO Course_offerings(launch_date, start_date, end_date, registration_deadline, target_number_registrations, seating_capacity, fees, eid, mid)
-        VALUES (launch_date, earliest_session.session_date, latest_session.session_date, deadline, target_num, seating_capacity, fees, eid, mid);
+        VALUES (launch_date_in, earliest_session.session_date, latest_session.session_date, deadline, target_num, seating_capacity, fees, eid, mid);
     END IF;
     COMMIT;
 
@@ -154,7 +140,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 --might need to check if the json format is agreeable with all of you, currently: {all the info}, {session 1 info}, {session 2 info}
-CREATE OR REPLACE FUNCTION get_my_course_package(cust_id int)
+CREATE OR REPLACE FUNCTION get_my_course_package(cust_id_in int)
 RETURNS json AS $$
 DECLARE
     active_package_id int;
@@ -168,20 +154,19 @@ DECLARE
     final JSONB;
 BEGIN
 
-    IF NOT EXISTS (SELECT 1 FROM Buys AS B WHERE B.cust_id = cust_id AND num_remaining_redemptions >= 1) THEN
-        SELECT package_id, buy_date INTO active_package_id, purchase_date FROM Buys B WHERE B.cust_id = cust_id ORDER BY buy_date DESC LIMIT 1;
+    IF NOT EXISTS (SELECT 1 FROM Buys AS B WHERE B.cust_id = cust_id_in AND num_remaining_redemptions >= 1) THEN
+        SELECT package_id, buy_date INTO active_package_id, purchase_date FROM Buys B WHERE B.cust_id = cust_id_in ORDER BY buy_date DESC LIMIT 1;
     ELSE
-        SELECT package_id, buy_date, num_remaining_redemptions INTO active_package_id, purchase_date, number_remaining FROM Buys B WHERE B.cust_id = cust_id AND B.num_remaining_redemptions >= 1;
+        SELECT package_id, buy_date, num_remaining_redemptions INTO active_package_id, purchase_date, number_remaining FROM Buys B WHERE B.cust_id = cust_id_in AND B.num_remaining_redemptions >= 1;
     END IF;
 
     SELECT name, price, num_free_registrations INTO package_name, price_of_package, number_free_sessions FROM Course_packages WHERE package_id = active_package_id;
-
 
     package_info_without_sessions := (select jsonb_build_object('package_name', package_name, 'purchase_date', purchase_date, 'price_of_package', price_of_package,
      'number_of_free_sessions', number_free_sessions, 'number_of_sessions_not_redeemed', number_remaining));
 
     WITH filter_redeems AS (
-        SELECT * FROM Redeems WHERE buy_date = purchase_date AND package_id = active_package_id AND cust_id = cust_id
+        SELECT * FROM Redeems WHERE buy_date = purchase_date AND package_id = active_package_id AND cust_id = cust_id_in
     ), redeems_sessions AS(
         SELECT * FROM (filter_redeems NATURAL JOIN Sessions)
     ), pre_json AS (
@@ -197,7 +182,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE PROCEDURE update_course_session(cust_id int, course_id int, launch_date date, session_id int)
+CREATE OR REPLACE PROCEDURE update_course_session(cust_id_in int, course_id_in int, launch_date_in date, session_id int)
 AS $$
 DECLARE
     new_session_launch_date date;
@@ -209,19 +194,19 @@ BEGIN
     SELECT launch_date, course_id, rid INTO new_session_launch_date, new_session_course_id, room_id
     FROM Sessions
     WHERE sid = session_id;
-    IF (new_session_course_id = session_id AND new_session_launch_date = launch_date) THEN
+    IF (new_session_course_id = session_id AND new_session_launch_date = launch_date_in) THEN
         seating_limit := (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
         total_count := total_count + (SELECT count(*) FROM Registers WHERE sid = session_id);
         total_count := total_count + (SELECT count(*) FROM Redeems WHERE sid = session_id);
         IF (total_count <= seating_limit) THEN
-            IF EXISTS(SELECT * FROM Registers AS R WHERE R.cust_id = cust_id AND R.course_id = course_id AND R.launch_date = launch_date) THEN
+            IF EXISTS(SELECT * FROM Registers AS R WHERE R.cust_id = cust_id_in AND R.course_id = course_id_in AND R.launch_date = launch_date_in) THEN
                 UPDATE Registers as R
                 SET R.sid = session_id
-                WHERE R.course_id = course_id AND R.launch_date = launch_date AND R.cust_id = cust_id;
-            ELSIF EXISTS(SELECT * FROM Redeems AS Re WHERE Re.cust_id = cust_id AND Re.course_id = course_id AND Re.launch_date = launch_date) THEN
+                WHERE R.course_id = course_id_in AND R.launch_date = launch_date_in AND R.cust_id = cust_id_in;
+            ELSIF EXISTS(SELECT * FROM Redeems AS Re WHERE Re.cust_id = cust_id_in AND Re.course_id = course_id_in AND Re.launch_date = launch_date_in) THEN
                 UPDATE Redeems as Re
                 SET Re.sid = session_id
-                WHERE Re.course_id = course_id AND Re.launch_date = launch_date AND Re.cust_id = cust_id;
+                WHERE Re.course_id = course_id_in AND Re.launch_date = launch_date_in AND Re.cust_id = cust_id_in;
             END IF;
         END IF;
     END IF;
@@ -231,51 +216,51 @@ $$ LANGUAGE plpgsql;
 
 --check: package_credit refers to the current amount of credit in active package, or is it the credit refunded (1 or 0).
 -- check: whether we should remove from registers and redeems, using check of launch_date and course_id and cust_id
-CREATE OR REPLACE PROCEDURE cancel_registration(cust_id int, course_id int, launch_date date)
+CREATE OR REPLACE PROCEDURE cancel_registration(cust_id_in int, course_id_in int, launch_date_in date)
 AS $$
 DECLARE
     current_date date := (SELECT NOW()::date);
     start_session date;
     refund_amt numeric := 0.00;
-    course_amount numeric  := (SELECT fees FROM Course_offerings AS CO WHERE CO.course_id = course_id AND CO.launch_date = launch_date);
+    course_amount numeric  := (SELECT fees FROM Course_offerings AS CO WHERE CO.course_id = course_id_in AND CO.launch_date = launch_date_in);
     package_credit int := 0;
     session_id int := 0;
 BEGIN
     SELECT session_date, sid INTO start_session, session_id
     FROM Sessions
-    WHERE R.course_id = course_id AND R.launch_date = launch_date AND R.cust_id = cust_id;
+    WHERE R.course_id = course_id_in AND R.launch_date = launch_date_in AND R.cust_id = cust_id_in;
 
-    IF EXISTS(SELECT * FROM Registers AS R WHERE R.cust_id = cust_id AND R.course_id = course_id AND R.launch_date = launch_date) THEN
+    IF EXISTS(SELECT * FROM Registers AS R WHERE R.cust_id = cust_id_in AND R.course_id = course_id_in AND R.launch_date = launch_date_in) THEN
         IF (start_session - current_date >= 7) THEN
             refund_amt := course_amount * 0.9;
             --remove from registers table
-            DELETE FROM Registers AS R WHERE (R.cust_id = cust_id AND R.launch_date = launch_date AND R.course_id = course_id);
+            DELETE FROM Registers AS R WHERE (R.cust_id = cust_id_in AND R.launch_date = launch_date_in AND R.course_id = course_id_in);
             --insert into cancels table
-            INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id, session_id, course_id, launch_date);
+            INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id_in, session_id, course_id_in, launch_date_in);
             COMMIT;
         ELSIF (start_session - current_date >= 0 and start_session - current_date < 7) THEN
-            DELETE FROM Registers AS R WHERE (R.cust_id = cust_id AND R.launch_date = launch_date AND R.course_id = course_id);
-            INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id, session_id, course_id, launch_date);
+            DELETE FROM Registers AS R WHERE (R.cust_id = cust_id_in AND R.launch_date = launch_date_in AND R.course_id = course_id_in);
+            INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id_in, session_id, course_id_in, launch_date_in);
             COMMIT;
         ELSE:
             RAISE EXCEPTION 'The session you are trying to cancel has ended already.';
         END IF;
-    ELSIF EXISTS(SELECT * FROM Redeems AS Re WHERE Re.cust_id = cust_id AND Re.course_id = course_id AND Re.launch_date = launch_date) THEN
+    ELSIF EXISTS(SELECT * FROM Redeems AS Re WHERE Re.cust_id = cust_id_in AND Re.course_id = course_id_in AND Re.launch_date = launch_date_in) THEN
         IF (start_session - current_date >= 7) THEN
             package_credit := 1;
             --add one credit to current active package
             UPDATE Buys AS B
             SET num_remaining_redemptions = num_remaining_redemptions + 1
-            WHERE B.cust_id = cust_id AND (num_remaining_redemptions > 0 OR current_date - B.buy_date <= 7);
+            WHERE B.cust_id = cust_id_in AND (num_remaining_redemptions > 0 OR current_date - B.buy_date <= 7);
 
             --remove entry from Redeem table
-            DELETE FROM Redeems AS R WHERE (R.cust_id = cust_id AND R.launch_date = launch_date AND R.course_id = course_id);
+            DELETE FROM Redeems AS R WHERE (R.cust_id = cust_id_in AND R.launch_date = launch_date_in AND R.course_id = course_id_in);
             --insert into cancels table
-            INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id, session_id, course_id, launch_date);
+            INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id_in, session_id, course_id_in, launch_date_in);
             COMMIT;
         ELSIF (start_session - current_date >= 0 and start_session - current_date < 7) THEN
-            DELETE FROM Redeems AS R WHERE (R.cust_id = cust_id AND R.launch_date = launch_date AND R.course_id = course_id);
-            INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id, session_id, course_id, launch_date);
+            DELETE FROM Redeems AS R WHERE (R.cust_id = cust_id_in AND R.launch_date = launch_date_in AND R.course_id = course_id_in);
+            INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id_in, session_id, course_id_in, launch_date_in);
             COMMIT;
         ELSE:
             RAISE EXCEPTION 'The session you are trying to cancel has ended already.';
@@ -285,7 +270,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 --whether a course has started defined based on day, will that be ok, or should I take into account of time?, might also want to refactor the code as it looks a bit bad
-CREATE OR REPLACE PROCEDURE update_instructor(session_id int, course_id int, launch_date date, new_instructor_id int)
+CREATE OR REPLACE PROCEDURE update_instructor(session_id int, course_id_in int, launch_date_in date, new_instructor_id int)
 AS $$
 DECLARE
     current_date date := (SELECT NOW()::date);
@@ -405,42 +390,6 @@ BEGIN
 
 END;
 $$ LANGUAGE plpgsql;
-
-/*
---draft, version 2 seems to make more sense, keep this here first just in case
-CREATE OR REPLACE FUNCTION promote_courses()
-RETURNS TABLE (customer_id int, customer_name text, course_area_A text,
-course_identifier_C int, course_title_C text, launch_date_offering_C date,
-course_offering_deadline date, fees_course_offering date) ORDER BY customer_id, course_offering_deadline AS $$
-DECLARE
-    customers (cid) - active to get inactive list of cid
-    WITH inactive_customers AS (
-        SELECT cust_id FROM Customers
-        EXCEPT
-        SELECT cust_id FROM Redeems AS R WHERE ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', R.redeem_date::date)) * 12 +
-        (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', R.redeem_date::date)) >= 6)
-        EXCEPT
-        SELECT cust_id FROM Registers AS Re WHERE ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', Re.reg_date::date)) * 12 +
-         (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', Re.reg_date::date)) >= 6)
-    ), merging_customers_registers AS (
-        SELECT cust_id, reg_date, name FROM (inactive_customers NATURAL LEFT JOIN (Registers NATURAL JOIN Courses))
-    ), merging_customers_redeems AS (
-        SELECT cust_id, redeem_date, name FROM (merging_customers_registers NATURAL LEFT JOIN (Redeems NATURAL JOIN Courses))
-    ) SELECT * FROM merging_customers_registers;
-
-    /*
-    some thoughts
-    -customer either only redeems, or only registers, or have something in redeem and registers
-    inactive customer: never register for any course_offering in last 6 monthly_salary
-    - find these customers first -- check registers and redeems table
-    course area A is interest to C if : some course_offering in A that C registered in for 3 recent most course_offering
-    if never sign up before, then every course area is interesting to C
-BEGIN
-
-END;
-$$ LANGUAGE plpgsql;
-*/
-
 
 --version 2, might want to check if record is null when empty relation is selected, dep on get_avail_course_offerings, cols of output!
 --also retrieved course_id using course_title, not sure if this is allowed
