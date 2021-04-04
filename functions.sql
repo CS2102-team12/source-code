@@ -1,9 +1,9 @@
 -- 1, 4, 8, 11, 12, 16, 18, 23, 24, 30
 
 -- 1
-CREATE OR REPLACE FUNCTION add_employee(IN em_name TEXT, IN em_address TEXT,
+CREATE OR REPLACE PROCEDURE add_employee(IN em_name TEXT, IN em_address TEXT,
 IN em_phone TEXT, IN em_email TEXT, IN join_date date, IN salary_type TEXT,
-IN rate INT, IN employee_type TEXT, IN em_areas text[]) RETURNS NULL AS $$
+IN rate INT, IN employee_type TEXT, IN em_areas text[]) AS $$
 
 DECLARE
     employee_id INT;
@@ -24,7 +24,7 @@ BEGIN
         INSERT INTO Full_time_Emp
         VALUES (rate, employee_id);
     
-    ELSE IF salary_type = 'part_time' THEN
+    elseif salary_type = 'part_time' THEN
         INSERT INTO Part_time_Emp
         VALUES (rate, employee_id);
     
@@ -34,7 +34,7 @@ BEGIN
         INSERT INTO Administrators
         VALUES (employee_id);
 
-    ELSE IF employee_type = 'Manager' THEN
+    elseif employee_type = 'Manager' THEN
         INSERT INTO Managers
         VALUES (employee_id);
 
@@ -45,7 +45,7 @@ BEGIN
             VALUES (area, employee_id);
         END LOOP;
     
-    ELSE IF employee_type = 'Instructor' THEN
+    elseif employee_type = 'Instructor' THEN
         INSERT INTO Instructors
         VALUES (employee_id);
 
@@ -53,7 +53,7 @@ BEGIN
             INSERT INTO Full_time_Instructors
             VALUES (employee_id);
         
-        ELSE IF salary_type = 'part_time' THEN
+        elseif salary_type = 'part_time' THEN
             INSERT INTO Part_time_Instructors
             VALUES (employee_id);
         
@@ -160,13 +160,16 @@ returns table(course_name text, course_fee numeric, session_date date,
 start_time time, session_duration interval, instructor text) as $$
 
 BEGIN
+    WITH r1 AS (SELECT cust_id, sid, course_id, launch_date FROM Registers),
+    co1 AS (SELECT course_id, launch_date, fees FROM Course_offerings),
+    c1 AS (SELECT course_id, name as cname FROM Courses),
+    s1 AS (SELECT sid, session_date, start_time, end_time, eid, launch_date, course_id FROM Sessions),
+    e1 AS (SELECT eid, name as ename FROM Employees)
     SELECT cname, fees, session_date, start_time, 
     end_time - start_time as session_duration, ename
-    FROM (SELECT cust_id, sid, course_id, launch_date FROM Registers) as r1 natural join
-    ((SELECT course_id, launch_date, fees FROM Course_offerings) as co1
-    natural join (SELECT course_id, name as cname FROM Courses) as c1)) natural join
-    ((SELECT sid, session_date, start_time, end_time, eid, launch_date, course_id FROM Sessions) as s1
-    natural join (SELECT eid, name as ename FROM Employees) as e1)
+    FROM r1 natural join
+    (co1 natural join c1) natural join
+    (s1 natural join e1)
     WHERE cust_id = cid
     ORDER BY session_date, start_time asc;
 END;
@@ -187,14 +190,17 @@ BEGIN
     SELECT session_date INTO session_start_date FROM Sessions
     WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
 
-    if num_registrations > 0 then return null;
+    if num_registrations > 0 then 
+        raise exception 'Session cannot be removed. Number of registrations more than 0.';
 
-    else if session_start_date <= current_date then return null;
-
-    else DELETE FROM Sessions
-    WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
+    elseif session_start_date <= current_date then
+        raise exception 'Session cannot be removed. Session has already started.';
 
     end if;
+
+    DELETE FROM Sessions
+    WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
+
 END;
 $$ LANGUAGE plpgsql;
 
@@ -222,24 +228,31 @@ BEGIN
     FROM find_instructors(cid, new_session_day, new_session_start_hour)
     WHERE eid = instructor_id;
 
-    if deadline < current_date then return null;
-    else if count_rid <= 0 then return null;
-    else if count_eid <= 0 then return null;
-    else
-        SELECT case
-            when max(sid) is null then 0
-            else max(sid)
-            end into new_sid
-        FROM Sessions
-        WHERE launch_date = l_date AND course_id = cid;
+    if deadline < current_date then
+        raise exception 'Course offering deadline has passed.';
 
-        new_sid := new_sid + 1;
+    elseif count_rid <= 0 then
+        raise exception 'Room is occupied.';
 
-        INSERT INTO Sessions
-        VALUES (new_sid, new_session_day, new_session_start_hour,
-        new_session_start_hour + new_session_duration, room_id, instructor_id,
-        l_date, cid);
+    elseif count_eid <= 0 then
+        raise exception 'Instructor is busy.';
+
     end if;
+
+    SELECT case
+        when max(sid) is null then 0
+        else max(sid)
+        end into new_sid
+    FROM Sessions
+    WHERE launch_date = l_date AND course_id = cid;
+
+    new_sid := new_sid + 1;
+
+    INSERT INTO Sessions
+    VALUES (new_sid, new_session_day, new_session_start_hour,
+    new_session_start_hour + new_session_duration, room_id, instructor_id,
+    l_date, cid);
+
 END;
 $$ LANGUAGE plpgsql;
 
@@ -247,53 +260,40 @@ $$ LANGUAGE plpgsql;
 create or replace function view_manager_report()
 returns table(manager_name text, num_course_areas int, num_course_offerings int,
 total_registration_fees numeric, best_selling_course_offering text) as $$
-
-DECLARE
-    course_offerings_and_fees table(launch_date date, course_id int,
-    eid int, registration_fees numeric);
-
-    course_offerings_and_redemptions table(launch_date date, course_id int,
-    eid int, redemption_fees numeric);
-
-    course_offerings_and_total_fees table(launch_date date, course_id int,
-    eid int, total_fees numeric);
-
-    manager_and_best_selling table(eid int, title text);
     
 BEGIN 
+    WITH course_offerings_and_fees AS (
     SELECT co1.launch_date as launch_date, co1.course_id as course_id,
     co1.mid as eid, (count(*) * co1.fees) as registration_fees 
     FROM Course_offerings as co1, Sessions as s1, Registers as r1
-    INTO course_offerings_and_fees
     WHERE co1.launch_date = s1.launch_date AND co1.course_id = s1.course_id
     AND r1.launch_date = co1.launch_date AND r1.course_id = co1.course_id
     AND r1.sid = s1.sid 
     AND extract(year from co1.end_date) = extract(year from current_date)
-    GROUP BY co1.launch_date, co1.course_id, co1.mid;
+    GROUP BY co1.launch_date, co1.course_id, co1.mid), 
 
+    course_offerings_and_redemptions AS (
     SELECT co1.launch_date as launch_date, co1.course_id as course_id,
     co1.mid as eid, (count(*) * r1.p1) as redemption_fees 
     FROM Course_offerings as co1, Sessions as s1, (Redeems natural join 
     (SELECT package_id, round(price/num_free_registrations) as p1 FROM Course_packages) as cp1) as r1
-    INTO course_offerings_and_redemptions
     WHERE co1.launch_date = s1.launch_date AND co1.course_id = s1.course_id
     AND r1.launch_date = co1.launch_date AND r1.course_id = co1.course_id
     AND r1.sid = s1.sid
     AND extract(year from co1.end_date) = extract(year from current_date)
-    GROUP BY co1.launch_date, co1.course_id, co1.mid;
+    GROUP BY co1.launch_date, co1.course_id, co1.mid),
 
+    course_offerings_and_total_fees AS (
     SELECT launch_date, course_id, eid, (redemption_fees + registration_fees) as total_fees
-    FROM course_offerings_and_fees natural join course_offerings_and_redemptions
-    INTO course_offerings_and_total_fees;
+    FROM course_offerings_and_fees natural join course_offerings_and_redemptions),
 
+    manager_and_best_selling AS (
     SELECT co1.eid, co1.title
     FROM (course_offerings_and_total_fees
     natural join (SELECT course_id, title FROM Courses) as c1) as co1
-    INTO manager_and_best_selling
-    WHERE co1.total_fees >= SELECT(max(total_fees)
+    WHERE co1.total_fees >= (SELECT max(total_fees)
     FROM course_offerings_and_total_fees co2
-    WHERE co1.eid = co2.eid); 
-    
+    WHERE co1.eid = co2.eid))
 
     SELECT m_name, count(a_name), count(launch_date, course_id), sum(total_fees), title
     FROM ((((Managers natural join (SELECT name as m_name, eid FROM Employees) as e1) 
