@@ -394,6 +394,8 @@ $$ LANGUAGE plpgsql;
 --version 2, might want to check if record is null when empty relation is selected, dep on get_avail_course_offerings, cols of output!
 --also retrieved course_id using course_title, not sure if this is allowed
 -- working on to see if the cursor for all_offering_curs should be changed, currently unable to get launch date and also course_id
+
+/*
 CREATE OR REPLACE FUNCTION promote_courses()
 RETURNS TABLE (customer_id int, customer_name text, course_area_A text,
 course_identifier_C int, course_title_C text, launch_date_offering_C date,
@@ -625,6 +627,7 @@ BEGIN
     ) select * from packages_with_count natural join top_N_count;
 END;
 $$ LANGUAGE plpgsql;
+*/
 
 CREATE OR REPLACE FUNCTION top_packages(N int)
 RETURNS TABLE (package_identifier int, free_sessions int, price numeric, start_date date, end_date date, num_sold int) AS $$
