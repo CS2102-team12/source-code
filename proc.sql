@@ -1009,7 +1009,8 @@ BEGIN
     SELECT rid FROM Sessions
     WHERE session_date = s_date
     AND ((end_time <= s_hour + s_duration AND end_time >= s_hour)
-        OR (start_time >= s_hour AND start_time <= s_hour + s_duration));
+        OR (start_time >= s_hour AND start_time <= s_hour + s_duration)
+	OR (start_time <= s_hour AND end_time >= s_hour + s_duration));
 
 END;
 $$ LANGUAGE plpgsql;
