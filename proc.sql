@@ -1,16 +1,19 @@
 -- 3
 CREATE OR REPLACE PROCEDURE add_customer ( _name TEXT, _home_address TEXT, _contact_number TEXT, _email_address TEXT,
-_credit_card_number int, _expiry_date date, _cvv_code int) AS $$
+_credit_card_number bigint, _expiry_date date, _cvv_code int) AS $$
 DECLARE
     _cust_id INT;
 BEGIN
+    IF _expiry_date < CURRENT_DATE THEN
+        RAISE EXCEPTION 'the card is expired!';
+    END IF;
     SELECT COALESCE(MAX(cust_id) + 1,0) INTO _cust_id FROM Customers;
     INSERT INTO Customers
     VALUES (_cust_id,_home_address,_contact_number,_name,_email_address);
     INSERT INTO Credit_Cards
-    VALUES (_credit_card_number,CURRENT_DATE,_cvv_code,_expiry_date);
+    VALUES (_credit_card_number,_cvv_code,_expiry_date);
     INSERT INTO Owns
-    VALUES (_credit_card_number,_cust_id);
+    VALUES (_credit_card_number,_cust_id, CURRENT_DATE);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -21,7 +24,7 @@ DECLARE
     _course_id INT;
 BEGIN
     IF _course_area IS NULL OR _course_area NOT IN (SELECT name FROM Course_areas) THEN 
-        RAISE EXCEPTION 'Invalid _course_area!';
+        RAISE EXCEPTION 'Invalid course area!';
     END IF;
     SELECT COALESCE(MAX(course_id) + 1,0) INTO _course_id FROM Courses;
     INSERT INTO Courses
@@ -98,7 +101,7 @@ BEGIN
         _room_id := row.rid;
         _room_capacity := _row.seating_capacity;
         WHILE _counter <= _end_date LOOP
-            IF extract(dow from _counter) > 5 THEN
+            IF extract(dow from _counter) = 0 OR extract(dow from _counter) = 6 THEN
                 CONTINUE;
             END IF;
 
@@ -203,11 +206,24 @@ BEGIN
     IF _customer_id IS NULL OR _course_id IS NULL OR _launch_date IS NULL OR _session_number IS NULL OR _use_package IS NULL THEN
         RAISE EXCEPTION 'All arguments cannot be null!';
     END IF;
-    IF _session_number NOT IN (SELECT sid FROM get_available_course_sessions(_course_id, _launch_date))
+    IF _session_number NOT IN (
+        SELECT sid FROM Sessions NATURAL JOIN Course_offerings 
+        WHERE launch_date = _launch_date AND course_id = _course_id AND registration_deadline > CURRENT_DATE
+    )
     OR
     _customer_id NOT IN (SELECT cust_id FROM Customers) THEN
-        RAISE EXCEPTION 'The session or customer cannot be found!';
+        RAISE EXCEPTION 'The session or customer is invalid!';
     END IF;
+
+    IF (
+        SELECT COUNT(*) FROM Registers 
+        WHERE course_id = _course_id and launch_date = _launch_date AND sid = _session_number
+    ) >= (
+        SELECT seating_capacity FROM Rooms NATURAL JOIN Sessions 
+        WHERE course_id = _course_id and launch_date = _launch_date AND sid = _session_number
+    ) THEN
+        RAISE EXCEPTION 'The session is full!';
+    END IF;        
 
     IF EXISTS (SELECT 1 FROM Registers WHERE cust_id = _customer_id AND course_id = _course_id AND launch_date = _launch_date ) THEN
         RAISE EXCEPTION 'The customer has already registered for the course offering before!';
@@ -256,7 +272,7 @@ BEGIN
     FROM Sessions WHERE sid = _session_number AND launch_date = _launch_date AND course_id = _course_id;
     
     IF NOT EXISTS (
-        SELECT 1 FROM find_rooms(_session_date, _session_start_hour, _session_duration) WHERE rid = _new_room_id
+        SELECT 1 FROM find_rooms(_session_date, make_time(_session_start_hour,0,0), _session_duration) WHERE rid = _new_room_id
     ) OR CURRENT_DATE > (
         SELECT session_date FROM Sessions WHERE sid = _session_number AND launch_date = _launch_date AND course_id = _course_id
     ) OR CURRENT_DATE = (
