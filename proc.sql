@@ -58,14 +58,14 @@ BEGIN
         EXCEPT
         -- part timers that are not eligible
         SELECT P.eid FROM Part_time_Instructors P NATURAL JOIN Sessions WHERE (
-            SELECT SUM(end_time - start_time) FROM Sessions WHERE eid = P.eid
+            SELECT SUM(end_time - start_time) FROM Sessions AS S WHERE S.eid = P.eid
         ) > make_interval(hours := 30) - _duration
         EXCEPT
         -- Past employees
-        SELECT eid FROM Employees WHERE depart_date IS NOT NULL
+        SELECT E.eid FROM Employees AS E WHERE depart_date IS NOT NULL
         EXCEPT
         -- check that does not clash with existing sessions that is taught
-        SELECT eid FROM Sessions WHERE session_date = _session_date AND (
+        SELECT S1.eid FROM Sessions AS S1 WHERE session_date = _session_date AND (
             _start_time - make_interval(hours := 1) >= start_time AND _start_time - make_interval(hours := 1) <= end_time
             OR
             _end_time + make_interval(hours := 1) >= start_time AND _end_time + make_interval(hours := 1) <= end_time
@@ -73,7 +73,7 @@ BEGIN
             _start_time <= start_time AND _end_time >= end_time
         )
     )
-    SELECT eid, name FROM Filtered_Instructors NATURAL JOIN Employees;
+    SELECT Z.eid, Z.name FROM (Filtered_Instructors NATURAL JOIN Employees) AS Z;
     
 END;
 $$ LANGUAGE plpgsql;
