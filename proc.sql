@@ -1235,11 +1235,11 @@ $$ LANGUAGE plpgsql;
 
 --30
 create or replace function view_manager_report()
-returns table(manager_name text, num_course_areas int, num_course_offerings int,
+returns table(manager_name text, num_course_areas bigint, num_course_offerings bigint,
 total_registration_fees numeric, best_selling_course_offering text) as $$
     
 BEGIN 
-    WITH course_offerings_and_fees AS (
+    RETURN QUERY(WITH course_offerings_and_fees AS (
     SELECT co1.launch_date as launch_date, co1.course_id as course_id,
     co1.mid as eid, (count(*) * co1.fees) as registration_fees 
     FROM Course_offerings as co1, Sessions as s1, Registers as r1
@@ -1251,7 +1251,7 @@ BEGIN
 
     course_offerings_and_redemptions AS (
     SELECT co1.launch_date as launch_date, co1.course_id as course_id,
-    co1.mid as eid, (count(*) * r1.p1) as redemption_fees 
+    co1.mid as eid, sum(r1.p1) as redemption_fees 
     FROM Course_offerings as co1, Sessions as s1, (Redeems natural join 
     (SELECT package_id, round(price/num_free_registrations) as p1 FROM Course_packages) as cp1) as r1
     WHERE co1.launch_date = s1.launch_date AND co1.course_id = s1.course_id
@@ -1270,15 +1270,20 @@ BEGIN
     natural join (SELECT course_id, title FROM Courses) as c1) as co1
     WHERE co1.total_fees >= (SELECT max(total_fees)
     FROM course_offerings_and_total_fees co2
-    WHERE co1.eid = co2.eid))
+    WHERE co1.eid = co2.eid)),
 
-    SELECT m_name, count(a_name), count(launch_date, course_id), sum(total_fees), title
+    final_without_best_selling AS (
+    SELECT eid, m_name, count(a_name) as a, 
+    count((launch_date, course_id)) as b, 
+    sum(total_fees) as c
     FROM ((((Managers natural join (SELECT name as m_name, eid FROM Employees) as e1) 
     natural left join (SELECT name as a_name, eid FROM course_areas) as ca1))
     natural left join course_offerings_and_total_fees) 
-    natural left join manager_and_best_selling
-    GROUP BY eid, m_name
-    ORDER BY m_name asc;
+    GROUP BY eid, m_name)
+
+    SELECT m_name as manager_name, a, b, c, title as best_selling_course_offering
+    FROM final_without_best_selling natural join manager_and_best_selling
+    ORDER BY m_name asc);
 END;
 $$ LANGUAGE plpgsql;
 
