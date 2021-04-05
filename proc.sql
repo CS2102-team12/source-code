@@ -392,6 +392,13 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE PROCEDURE remove_employee(employee_id int, dep_date date)
 AS $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM Employees WHERE eid = employee_id) THEN
+        RAISE EXCEPTION 'Employee cannot be found.';
+    END IF;
+    IF (SELECT join_date FROM Employees WHERE eid = employee_id) >= dep_date THEN
+        RAISE EXCEPTION 'The departure date has to be later than join date.';
+    END IF;
+    
     IF EXISTS(SELECT 1 FROM Managers AS M WHERE M.eid = employee_id) THEN
         IF EXISTS(SELECT 1 FROM Course_areas AS CA WHERE CA.eid = employee_id) THEN
             RAISE EXCEPTION 'No departure of Manager managing a course area is allowed.';
@@ -401,7 +408,7 @@ BEGIN
             RAISE EXCEPTION 'No departure of Administrator before a course registration closes is allowed.';
         END IF;
     ELSIF EXISTS(SELECT 1 FROM INSTRUCTORS AS I WHERE I.eid = employee_id) THEN
-        IF EXISTS(SELECT 1 FROM Sessions AS S WHERE S.eid = employee_id AND S.start_date > dep_date) THEN
+        IF EXISTS(SELECT 1 FROM Sessions AS S WHERE S.eid = employee_id AND S.session_date > dep_date) THEN
             RAISE EXCEPTION 'No departure of Instructor after a session has started is allowed.';
         END IF;
     END IF;
