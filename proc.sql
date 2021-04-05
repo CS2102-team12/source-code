@@ -1079,13 +1079,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
 --23
 create or replace procedure remove_session(in l_date date, in cid int, in session_id int) as $$
 
 DECLARE
     num_registrations int;
     session_start_date date;
+    num_sessions int;
+    current_sid int;
 
 BEGIN
     SELECT count(*) INTO num_registrations FROM Registers
@@ -1094,13 +1095,38 @@ BEGIN
     SELECT session_date INTO session_start_date FROM Sessions
     WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
 
+    SELECT count(distinct sid) INTO num_sessions FROM Sessions
+    WHERE course_id = cid AND launch_date = l_date;
+
     if num_registrations > 0 then 
         raise exception 'Session cannot be removed. Number of registrations more than 0.';
 
     elseif session_start_date <= current_date then
         raise exception 'Session cannot be removed. Session has already started.';
+    
+    elseif num_sessions <= 1 then
+        raise exception 'Session cannot be removed. Number of sessions cannot be 0.';
 
     end if;
+
+    IF session_id = 1 THEN
+        UPDATE Course_offerings
+        SET start_date = (SELECT date FROM Sessions WHERE sid = 2 
+        AND course_id = cid AND launch_date = l_date)
+        WHERE course_id = cid AND launch_date = l_date;
+    
+    ELSEIF session_id = num_sessions THEN
+        UPDATE Course_offerings
+        SET end_date = (SELECT date FROM Sessions WHERE sid = num_sessions - 1
+        AND course_id = cid AND launch_date = l_date)
+        WHERE course_id = cid AND launch_date = l_date;
+    
+    END IF;
+
+    UPDATE Sessions
+    SET sid = sid - 1
+    WHERE course_id = cid AND launch_date = l_date
+    AND sid > session_id;
 
     DELETE FROM Sessions
     WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
@@ -1109,53 +1135,93 @@ END;
 $$ LANGUAGE plpgsql;
 
 --24
-/* note: new_session_duration not specified in problem statement. */
 create or replace procedure add_session(in l_date date, in cid int, in new_session_id int,
-in new_session_day date, in new_session_start_hour time, in new_session_duration interval,
-in instructor_id int, in room_id int) as $$
+in new_session_day date, in new_session_start_hour time, in instructor_id int, in room_id int) as $$
 
 DECLARE
     deadline date;
     count_rid int;
     count_eid int;
-    new_sid int;
+    session_duration int;
+    num_sessions int;
+    inconsistent_id_and_date int;
 
 BEGIN 
+    /* find registration deadline. */
     SELECT registration_deadline INTO deadline 
     FROM Course_offerings WHERE launch_date = l_date AND course_id = cid;
 
+    /* Count number of rooms that are available. */
     SELECT count(rid) into count_rid
     FROM find_rooms(new_session_day, new_session_start_hour, new_session_duration)
     WHERE rid = room_id;
 
+    /* Count number of instructors that are available. */
     SELECT count(eid) into count_eid
     FROM find_instructors(cid, new_session_day, new_session_start_hour)
     WHERE eid = instructor_id;
 
+    /* Find duration of the course session for end_time. */
+    SELECT duration INTO session_duration
+    FROM Courses
+    WHERE course_id = cid;
+
+    /* Find current number of sessions for the course offering. */
+    SELECT count(distinct sid) INTO num_sessions
+    FROM Sessions
+    WHERE launch_date = l_date AND course_id = cid;
+
+    /* Check if new_session_day is not consistent with other
+    session's dates based on their session numbering. */
+    SELECT count(*) INTO inconsistent_id_and_date
+    FROM Sessions
+    WHERE launch_date = l_date AND course_id = cid
+    AND ((sid < new_session_id AND 
+    (date > new_session_day OR (date = new_session_day AND start_time > new_session_start_hour)))
+    OR (sid >= new_session_id AND 
+    (date < new_session_day OR (date = new_session_day AND start_time < new_session_start_hour))));
+
     if deadline < current_date then
         raise exception 'Course offering deadline has passed.';
+
+    elseif new_session_day < deadline + 10 then
+        raise exception 'Session day must be at least 10 days after registration deadline.';
 
     elseif count_rid <= 0 then
         raise exception 'Room is occupied.';
 
     elseif count_eid <= 0 then
         raise exception 'Instructor is busy.';
+    
+    elseif inconsistent_id_and_date > 0 then
+        raise exception 'Mismatch with existing session id and dates.';
 
     end if;
 
-    SELECT case
-        when max(sid) is null then 0
-        else max(sid)
-        end into new_sid
-    FROM Sessions
-    WHERE launch_date = l_date AND course_id = cid;
+    /* If new session is earliest or latest, change start_date or end_date of course offering. */
+    IF new_session_id = 1 THEN
+        UPDATE Course_offerings
+        SET start_date = new_session_day
+        WHERE course_id = cid AND launch_date = l_date;
+    
+    ELSEIF new_session_id = num_sessions THEN
+        UPDATE Course_offerings
+        SET end_date = new_session_day 
+        WHERE course_id = cid AND launch_date = l_date;
+    
+    END IF;
 
-    new_sid := new_sid + 1;
+    /* increment sid of sessions after the inserted session. */
+    UPDATE Sessions
+    SET sid = sid + 1
+    WHERE launch_date = l_date AND course_id = cid
+    AND sid >= new_session_id;
 
+    /* Insert new session. */
     INSERT INTO Sessions
     VALUES (new_sid, new_session_day, new_session_start_hour,
-    new_session_start_hour + new_session_duration, room_id, instructor_id,
-    l_date, cid);
+    new_session_start_hour + make_interval(hours := session_duration), 
+    room_id, instructor_id, l_date, cid);
 
 END;
 $$ LANGUAGE plpgsql;
