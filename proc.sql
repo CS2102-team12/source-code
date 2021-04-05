@@ -410,7 +410,7 @@ fees numeric, deadline date, target_num int, admin_id int, VARIADIC sessions inf
 AS $$
 DECLARE
     end_time_derv time;
-    seating_capacity int;
+    _seating_capacity int;
     room_id int;
     all_instructors boolean := TRUE;
     earliest_session information_session := $7[0];
@@ -422,6 +422,7 @@ DECLARE
     possible_instructor int;
     new_session information_session;
     start_time_derv time;
+
 BEGIN
 
     IF EXISTS (SELECT 1 FROM Course_offerings AS CO WHERE CO.launch_date = launch_date_in AND CO.course_id = course_id_in) THEN
@@ -449,20 +450,20 @@ BEGIN
             RETURN;
         END IF;
 
-        start_time_derv := new_session.start_hour;
-        end_time_derv := new_session.start_hour + duration;
+        start_time_derv := make_time(new_session.start_hour,0,0);
+        end_time_derv := make_time(new_session.start_hour + duration,0,0);
         room_id := new_session.room_id;
-        seating_capacity := seating_capacity + (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
+        _seating_capacity := _seating_capacity + (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
         -- check if room currently has a clashing class
         IF EXISTS(SELECT 1 FROM Sessions AS S WHERE S.session_date = new_session.session_date AND S.rid = room_id AND
-        (S.start_time < new_session.start_hour OR S.end_time > end_time_derv)) THEN
+        (S.start_time < start_time_derv OR S.end_time > end_time_derv)) THEN
             ROLLBACK;
             RAISE EXCEPTION 'The room will be use for other classes during this session.';
             RETURN;
         END IF;
 
         --check if session is valid
-        IF (((new_session.start_time >= '0900' and new_session.start_time < '1200') or (new_session.start_time >= '1400' and new_session.start_time < '1800')) AND (new_session.end_time <= '1800' OR (new_session.end_time <= '1200' AND new_session.end_time >= '1400'))) THEN
+        IF (((start_time_derv >= make_time(9,0,0) and start_time_derv < make_time(12,0,0)) or (start_time_derv >= make_time(14,0,0) and start_time_derv < make_time(18,0,0))) AND (end_time_derv <= make_time(18,0,0) OR (end_time_derv <= make_time(12,0,0) AND end_time_derv >= make_time(14,0,0)))) THEN
 
             --check if there is session from same course offering with the same day and time
             IF EXISTS (SELECT 1 FROM Sessions AS S WHERE S.course_id = course_id_in AND S.launch_date = launch_date_in AND S.start_time = new_session.start_time) THEN
@@ -485,7 +486,7 @@ BEGIN
 
         --insert this session into Sessions table
         INSERT INTO Sessions(sid, session_date, start_time, end_time, rid, eid, launch_date, course_id)
-        VALUES (current_session_number, new_session.session_date, new_session.start_hour, end_time_derv, room_id, possible_instructor, launch_date_in, course_id_in);
+        VALUES (current_session_number, new_session.session_date, start_time_derv, end_time_derv, room_id, possible_instructor, launch_date_in, course_id_in);
 
     END LOOP;
 
