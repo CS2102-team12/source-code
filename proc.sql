@@ -56,9 +56,10 @@ BEGIN
 
     RETURN QUERY
     WITH Filtered_Instructors AS (
-        SELECT eid FROM Instructors NATURAL JOIN Specializes NATURAL JOIN Course_areas NATURAL JOIN Courses 
+        SELECT eid FROM (Instructors NATURAL JOIN Specializes) AS X,  (Course_areas NATURAL JOIN Courses) AS Y
+        WHERE X.name = Y.name  AND
         -- Find all instructors with matching speciality 
-        WHERE course_id = _course_id 
+        Y.course_id = _course_id 
         EXCEPT
         -- part timers that are not eligible
         SELECT eid FROM Part_time_Instructors P NATURAL JOIN Sessions WHERE (
@@ -207,8 +208,9 @@ BEGIN
         RAISE EXCEPTION 'All arguments cannot be null!';
     END IF;
     IF _session_number NOT IN (
-        SELECT sid FROM Sessions NATURAL JOIN Course_offerings 
-        WHERE launch_date = _launch_date AND course_id = _course_id AND registration_deadline > CURRENT_DATE
+        SELECT sid FROM Sessions as S, Course_offerings as C
+        WHERE C.course_id = S.course_id AND C.launch_date = S.launch_date 
+        AND C.launch_date = _launch_date AND C.course_id = _course_id AND C.registration_deadline > CURRENT_DATE
     )
     OR
     _customer_id NOT IN (SELECT cust_id FROM Customers) THEN
