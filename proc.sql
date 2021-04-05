@@ -666,44 +666,20 @@ END;
 $$ LANGUAGE plpgsql;
 
 --21
---whether a course has started defined based on day, will that be ok, or should I take into account of time?, might also want to refactor the code as it looks a bit bad
 CREATE OR REPLACE PROCEDURE update_instructor(session_id int, course_id_in int, launch_date_in date, new_instructor_id int)
 AS $$
 DECLARE
     current_date date := (SELECT NOW()::date);
-    session_date date := (SELECT session_date FROM Sessions WHERE sid = session_id);
-    session_start_time time := (SELECT start_time FROM Sessions WHERE sid = session_id);
-    session_end_time time := (SELECT end_time FROM Sessions WHERE sid = session_id);
-    closest_end_session_new_instructor time;
-    total_hours_part_time int;
+    session_date date := (SELECT session_date FROM Sessions WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
+    session_start_time time := (SELECT start_time FROM Sessions WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
 BEGIN
-    IF (session_date - current_date >= 0) THEN
-        IF EXISTS (SELECT 1 FROM Full_time_Instructors WHERE eid = new_instructor_id) THEN
-            IF NOT EXISTS(SELECT 1 FROM Sessions AS S WHERE (S.start_time < session_start_time or S.end_time > session_end_time)) THEN
-                closest_end_session_new_instructor := (SELECT end_time FROM Sessions WHERE sid = session_id AND end_hour < session_start_time ORDER BY DESC LIMIT 1);
-                IF (closest_end_session_new_instructor >= 1) THEN
-                    UPDATE Sessions AS S
-                    SET eid = new_instructor_id
-                    WHERE S.sid = session_id;
-                    COMMIT;
-                END IF;
-            END IF;
-        ELSIF EXISTS (SELECT 1 FROM Part_time_Instructors WHERE eid = new_instructor_id) THEN
-            SELECT sum(end_time - start_time) into total_hours_part_time
-            FROM Sessions AS S
-            WHERE S.eid = new_instructor_id AND (EXTRACT(MONTH from S.session_date) = EXTRACT(MONTH from session_date));
-            IF (total_hours_part_time + (session_end_time - session_start_time) <= 30) THEN
-                IF NOT EXISTS(SELECT 1 FROM Sessions AS S WHERE (S.start_time < session_start_time or S.end_time > session_end_time)) THEN
-                    closest_end_session_new_instructor := (SELECT end_time FROM Sessions WHERE sid = session_id AND end_hour < session_start_time ORDER BY DESC LIMIT 1);
-                    IF (closest_end_session_new_instructor >= 1) THEN
-                        UPDATE Sessions AS S
-                        SET eid = new_instructor_id
-                        WHERE S.sid = session_id;
-                        COMMIT;
-                    END IF;
-                END IF;
-            END IF;
-        END IF;
+    IF (session_date - current_date >= 0 AND session_start_time < (SELECT CURRENT_TIME)) THEN
+        UPDATE Sessions AS S
+        SET eid = new_instructor_id
+        WHERE S.sid = session_id;
+        COMMIT;
+    ELSE
+        RAISE EXCEPTION 'The session has already started, updating of instructor is not allowed.';
     END IF;
 
 END;
@@ -1243,39 +1219,58 @@ CREATE OR REPLACE FUNCTION get_available_instructors(cid int, start_date date, e
 RETURNS TABLE(eid int, name text, num_hours int, day date, available_hours time []) AS $$
 DECLARE
 	curs CURSOR FOR (
-	select distinct S2.eid, I1.name
-	from Specializes S2, Courses C1, Instructors I1
+	(select S2.eid, I1.name
+	from Specializes S2, Courses C1, Instructors I1, Employees E1
 	where I1.eid = S2.eid
 	and I1.eid = S1.eid
 	and S2.name = C1.name
 	and C1.course_id = cid
-	order by eid asc
-	);
+	and E1.depart_date IS NULL
+	EXCEPT
+	select eid, name
+	from (Part_time_Instructors natural join Instructors) PI
+	where (
+		select sum(DATE_PART('hour', end_time - start_time))
+		from Sessions
+		where eid = PI.eid
+		and course_id = cid
+		and session_date >= start_date
+		and session_date <= end_date
+		and extract(month from session_date) = extract(month from start_date)
+		and extract(year from session_date) = extract(year from start_date)
+	) >= 30
+	)order by eid asc);
 	r RECORD;
 	start_day date;
 	start_hour time;
-	num_part_time_hours int;
 
 BEGIN
 	OPEN curs;
 	LOOP
 		FETCH curs INTO r;
 		EXIT WHEN NOT FOUND;
+				
+				eid := r.eid;
+				name := r.name;
 				select sum(DATE_PART('hour', end_time - start_time) ) into num_hours
 				from Sessions S1
 				where S1.eid = r.eid
-				and extract(month from S1.session_date) = extract(month from start_day)
-				and extract(year from S1.session_date) = extract(year from start_day);
-			
-			IF EXISTS (select 1 from Part_time_Instructors where eid = r.eid) and num_hours > 30 THEN
-
-			ELSE
-				eid := r.eid;
-				name := r.name;
+				and extract(month from S1.session_date) = extract(month from start_date)
+				and extract(year from S1.session_date) = extract(year from start_date);
 				start_day := start_date;
 			
 				while start_day <= end_date
 				LOOP
+
+					IF extract(dow from start_day) = 6 THEN
+						start_day := start_day + '2 days'::interval;
+						CONTINUE;
+					END IF;
+
+					IF extract(dow from start_day) = 0 THEN
+						start_day := start_day + '1 day'::interval;
+						CONTINUE;
+					END IF;
 
 					day := start_day;
 
@@ -1318,8 +1313,7 @@ BEGIN
 
 					start_day := start_day + '1 day'::interval;
 
-				END LOOP;
-			END IF;
+				END LOOP;		
 	END LOOP;
 	CLOSE curs;
 END;

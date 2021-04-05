@@ -1,3 +1,8 @@
+drop table if exists Customers, Credit_cards, Owns, Employees, Pay_slips,
+Part_time_Emp, Full_time_Emp, Administrators, Managers, Course_packages, Rooms, Courses,
+Course_areas, Instructors, Specializes, Full_time_Instructors, Part_time_Instructors,
+Course_offerings, Sessions, Cancels, Registers, Buys, Redeems;
+
 create table Customers (
 cust_id int primary key,
 address text,
