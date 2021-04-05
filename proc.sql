@@ -46,13 +46,8 @@ BEGIN
     
     _start_time := make_time(_start_hour,0,0);
     -- find the session end time and duration
-    SELECT end_time INTO _end_time FROM Sessions 
-    WHERE session_date = _session_date AND start_time = _start_time AND course_id = _course_id;
-    _duration := _end_time - _start_time;
-
-    IF _end_time IS NULL THEN
-        RAISE EXCEPTION 'The session cannot be found!';
-    END IF;
+    SELECT make_interval(hours := duration) INTO _duration WHERE course_id = _course_id;
+    _end_time := _start_time + _duration;
 
     RETURN QUERY
     WITH Filtered_Instructors AS (
