@@ -7,13 +7,13 @@ email text
 );
 
 create table Credit_cards (
-card_number int primary key,
+card_number bigint primary key,
 CVV int not null,
 expiry_date date not null
 );
 
 create table Owns (
-card_number int references Credit_cards,
+card_number bigint references Credit_cards,
 cust_id int references Customers,
 from_date date,
 primary key(card_number,cust_id)
@@ -158,7 +158,7 @@ primary key(cust_id,cancel_date,sid,course_id,launch_date)
 
 create table Registers (
 reg_date date,
-card_number int,
+card_number bigint,
 cust_id int,
 sid int,
 course_id int,
@@ -171,7 +171,7 @@ primary key(card_number,cust_id,reg_date,sid,course_id,launch_date)
 create table Buys (
 buy_date date,
 package_id int references Course_packages,
-card_number int,
+card_number bigint,
 cust_id int,
 num_remaining_redemptions int not null,
 foreign key(card_number,cust_id) references Owns,
@@ -182,7 +182,7 @@ create table Redeems (
 redeem_date date,
 buy_date date,
 package_id int references Course_packages,
-card_number int,
+card_number bigint,
 cust_id int,
 sid int,
 course_id int,
