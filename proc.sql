@@ -640,7 +640,7 @@ BEGIN
             DELETE FROM Redeems AS R WHERE (R.cust_id = cust_id_in AND R.launch_date = launch_date_in AND R.course_id = course_id_in);
             INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id_in, session_id, course_id_in, launch_date_in);
             COMMIT;
-        ELSE:
+        ELSE
             RAISE EXCEPTION 'The session you are trying to cancel has ended already.';
         END IF;
     END IF;
