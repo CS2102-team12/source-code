@@ -46,7 +46,7 @@ BEGIN
     
     _start_time := make_time(_start_hour,0,0);
     -- find the session end time and duration
-    SELECT make_interval(hours := duration) INTO _duration WHERE course_id = _course_id;
+    SELECT make_interval(hours := duration) INTO _duration FROM Courses WHERE course_id = _course_id;
     _end_time := _start_time + _duration;
 
     RETURN QUERY
