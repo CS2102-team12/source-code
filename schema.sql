@@ -134,7 +134,7 @@ check ( extract(dow from session_date::timestamp) >= 1 and extract(dow from sess
 start_time time
 check ( start_time::time >= '0900' and start_time::time < '1200' or start_time::time >= '1400' and start_time::time < '1800'),
 end_time time
-check (end_time::time <= '1800'),
+check (end_time::time <= '1800' and end_time::time > '0900'),
 rid int not null references Rooms,
 eid int not null references Instructors,
 launch_date date,
@@ -341,3 +341,39 @@ END IF;
 
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION package_func() RETURNS TRIGGER
+AS $$
+DECLARE
+num_active_pkg int;
+num_partially_active_pkg int;
+
+BEGIN
+
+select count(*) INTO num_active_pkg
+from Buys
+where NEW.cust_id = cust_id
+and num_remaining_redemptions > 0;
+
+select count(*) INTO num_partially_active_pkg
+from Buys B1
+where NEW.cust_id = B1.cust_id
+and num_remaining_redemptions = 0
+and exists (
+select 1 
+from (Redeems R1 natural join Sessions S1) RS
+where package_id = B1.package_id
+and (S1.session_date - now() >= 7)
+);
+
+IF num_active_pkg > 1 or num_partially_active_pkg > 1 THEN
+RETURN NULL;
+END IF;
+
+END;
+$$ LANGUAGE plpgsql;
+
+--check if a customer has more than 1 active/partially active packages
+CREATE TRIGGER package_trigger
+BEFORE INSERT ON Buys
+FOR EACH ROW EXECUTE FUNCTION package_func();
