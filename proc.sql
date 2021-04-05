@@ -57,7 +57,7 @@ BEGIN
         Y.course_id = _course_id 
         EXCEPT
         -- part timers that are not eligible
-        SELECT eid FROM Part_time_Instructors P NATURAL JOIN Sessions WHERE (
+        SELECT P.eid FROM Part_time_Instructors P NATURAL JOIN Sessions WHERE (
             SELECT SUM(end_time - start_time) FROM Sessions WHERE eid = P.eid
         ) > make_interval(hours := 30) - _duration
         EXCEPT
