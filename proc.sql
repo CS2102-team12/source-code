@@ -1001,13 +1001,13 @@ create or replace function find_rooms(in s_date date, in s_hour time, in s_durat
 returns table(rid int) as $$
 
 BEGIN
-    SELECT rid FROM Rooms
+    RETURN QUERY(SELECT rid FROM Rooms
     EXCEPT
     SELECT rid FROM Sessions
     WHERE session_date = s_date
     AND ((end_time <= s_hour + s_duration AND end_time >= s_hour)
         OR (start_time >= s_hour AND start_time <= s_hour + s_duration)
-	OR (start_time <= s_hour AND end_time >= s_hour + s_duration));
+	OR (start_time <= s_hour AND end_time >= s_hour + s_duration)));
 
 END;
 $$ LANGUAGE plpgsql;
@@ -1038,9 +1038,9 @@ create or replace function get_available_course_packages()
 returns table(name text, num_free_registrations int, sale_end_date date, price numeric) as $$
 
 BEGIN
-    SELECT name, num_free_registrations, sale_end_date, price
+    RETURN QUERY(SELECT name, num_free_registrations, sale_end_date, price
     FROM Course_packages
-    WHERE sale_end_date >= current_date;
+    WHERE sale_end_date >= current_date);
 
 END;
 $$ LANGUAGE plpgsql;
@@ -1052,7 +1052,7 @@ DECLARE
     s_capacity int;
 
 BEGIN
-    SELECT seating_capacity INTO s_capacity FROM Course_offerings
+    RETURN QUERY(SELECT seating_capacity INTO s_capacity FROM Course_offerings
     WHERE l_date = launch_date AND cid = course_id;
 
     SELECT session_date, start_time, name as instructor, 
@@ -1061,7 +1061,7 @@ BEGIN
         natural join (SELECT cust_id, sid FROM Registers) as foo2
     WHERE l_date = launch_date AND cid = course_id
     GROUP BY session_date, start_time, name
-    ORDER BY (session_date, start_time) asc;
+    ORDER BY (session_date, start_time) asc);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -1071,7 +1071,7 @@ returns table(course_name text, course_fee numeric, session_date date,
 start_time time, session_duration interval, instructor text) as $$
 
 BEGIN
-    WITH r1 AS (SELECT cust_id, sid, course_id, launch_date FROM Registers),
+    RETURN QUERY(WITH r1 AS (SELECT cust_id, sid, course_id, launch_date FROM Registers),
     co1 AS (SELECT course_id, launch_date, fees FROM Course_offerings),
     c1 AS (SELECT course_id, name as cname FROM Courses),
     s1 AS (SELECT sid, session_date, start_time, end_time, eid, launch_date, course_id FROM Sessions),
@@ -1082,7 +1082,7 @@ BEGIN
     (co1 natural join c1) natural join
     (s1 natural join e1)
     WHERE cust_id = cid
-    ORDER BY session_date, start_time asc;
+    ORDER BY session_date, start_time asc);
 END;
 $$ LANGUAGE plpgsql;
 
