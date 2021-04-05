@@ -135,7 +135,7 @@ $$ LANGUAGE plpgsql;
 -- 13
 CREATE OR REPLACE PROCEDURE buy_course_package (_customer_id INT, _package_id INT) AS $$
 DECLARE
-_credit_card_number INT;
+_credit_card_number BIGINT;
 _num_redemptions INT;
 BEGIN
     IF _customer_id IS NULL OR _package_id IS NULL THEN
