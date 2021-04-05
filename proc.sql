@@ -678,7 +678,7 @@ BEGIN
     IF (session_date - current_date >= 0) THEN
         IF EXISTS (SELECT 1 FROM Full_time_Instructors WHERE eid = new_instructor_id) THEN
             IF NOT EXISTS(SELECT 1 FROM Sessions AS S WHERE (S.start_time < session_start_time or S.end_time > session_end_time)) THEN
-                closest_end_session_new_instructor := (SELECT end_time FROM Sessions WHERE sid = session_id AND end_hour < session_start_time ORDER BY DESC LIMIT 1);
+                closest_end_session_new_instructor := (SELECT end_time FROM Sessions WHERE sid = session_id AND end_time < session_start_time ORDER BY end_time DESC LIMIT 1);
                 IF (closest_end_session_new_instructor >= 1) THEN
                     UPDATE Sessions AS S
                     SET eid = new_instructor_id
@@ -692,7 +692,7 @@ BEGIN
             WHERE S.eid = new_instructor_id AND (EXTRACT(MONTH from S.session_date) = EXTRACT(MONTH from session_date));
             IF (total_hours_part_time + (session_end_time - session_start_time) <= 30) THEN
                 IF NOT EXISTS(SELECT 1 FROM Sessions AS S WHERE (S.start_time < session_start_time or S.end_time > session_end_time)) THEN
-                    closest_end_session_new_instructor := (SELECT end_time FROM Sessions WHERE sid = session_id AND end_hour < session_start_time ORDER BY DESC LIMIT 1);
+                    closest_end_session_new_instructor := (SELECT end_time FROM Sessions WHERE sid = session_id AND end_time < session_start_time ORDER BY end_time DESC LIMIT 1);
                     IF (closest_end_session_new_instructor >= 1) THEN
                         UPDATE Sessions AS S
                         SET eid = new_instructor_id
