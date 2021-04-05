@@ -671,7 +671,7 @@ DECLARE
     session_date date := (SELECT session_date FROM Sessions WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
     session_start_time time := (SELECT start_time FROM Sessions WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
 BEGIN
-    IF (session_date - current_date >= 0 AND session_start_time < SELECT CURRENT_TIME) THEN
+    IF (session_date - current_date >= 0 AND session_start_time < (SELECT CURRENT_TIME)) THEN
         UPDATE Sessions AS S
         SET eid = new_instructor_id
         WHERE S.sid = session_id;
