@@ -117,13 +117,13 @@ on delete cascade
 );
 
 create table Course_offerings (
-launch_date date,
-start_date date,
-end_date date,
-registration_deadline date
+launch_date date not null,
+start_date date not null,
+end_date date not null,
+registration_deadline date not null
 check ( DATE_PART('day',start_date::timestamp-registration_deadline::timestamp) >= 10),
 target_number_registrations int,
-seating_capacity int,
+seating_capacity int not null,
 fees numeric,
 eid int not null references Administrators,
 mid int not null references Managers,
@@ -201,7 +201,7 @@ primary key(redeem_date,sid,course_id,launch_date,buy_date,package_id,card_numbe
 --checks if the instructor specialises in the area of the session he is assigned to
 --checks if the instructor is teaching 2 consecutive sessions
 CREATE TRIGGER session_inst_trigger
-BEFORE INSERT ON Sessions
+BEFORE INSERT OR UPDATE ON Sessions
 FOR EACH ROW EXECUTE FUNCTION session_inst_func();
 
 CREATE OR REPLACE FUNCTION session_inst_func() RETURNS TRIGGER
@@ -209,7 +209,10 @@ AS $$
 DECLARE
 inst_spec int;
 inst_time int;
+part_time_inst_hrs int;
 courseArea text;
+session_duration int;
+
 BEGIN
 
 select name INTO courseArea 
@@ -224,11 +227,23 @@ and courseArea = name;
 select count(*) INTO inst_time
 from Sessions
 where NEW.eid = eid
-and (DATE_PART('minute', NEW.start_time-end_time) < 60
-or DATE_PART('minute', start_time-NEW.end_time) < 60);
+and (DATE_PART('hour', NEW.start_time-end_time) < 1
+or DATE_PART('hour', start_time-NEW.end_time) < 1);
 
-IF inst_spec = 0 or inst_time > 0 THEN
+select sum(end_time-start_time) into part_time_inst_hrs
+from Part_time_Instructors natural join Sessions 
+where eid = NEW.eid
+and extract(month from session_date) = extract(month from NEW.session_date)
+and extract(year from session_date) = extract(year from NEW.session_date);
+
+select duration INTO session_duration
+from Courses
+where course_id = NEW.course_id;
+
+IF inst_spec = 0 or inst_time > 0 or part_time_inst_hrs + session_duration > 30 THEN
 RETURN NULL;
+ELSE
+RETURN NEW;
 END IF;
 
 END;
@@ -239,7 +254,7 @@ $$ LANGUAGE plpgsql;
 --checks if the room to be inserted is being used by other sessions
 --checks if the instructor assigned has other sessions at the same time
 CREATE TRIGGER session_time_trigger
-BEFORE INSERT ON Sessions
+BEFORE INSERT OR UPDATE ON Sessions
 FOR EACH ROW EXECUTE FUNCTION session_time_func();
 
 CREATE OR REPLACE FUNCTION session_time_func() RETURNS TRIGGER
@@ -269,6 +284,8 @@ or NEW.eid = eid)
 
 IF same_session_time > 0 THEN
 RETURN NULL;
+ELSE
+RETURN NEW;
 END IF;
 
 END;
@@ -276,7 +293,7 @@ $$ LANGUAGE plpgsql;
 
 --checks if a customer has already registered for a course session for a particular course using credit card
 CREATE TRIGGER registration_limit_trigger
-BEFORE INSERT ON Registers
+BEFORE INSERT OR UPDATE ON Registers
 FOR EACH ROW EXECUTE FUNCTION registration_limit_func();
 
 CREATE OR REPLACE FUNCTION registration_limit_func() RETURNS TRIGGER
@@ -305,6 +322,8 @@ where NEW.course_id = course_id;
 
 IF num_reg > 0 or num_redeem > 0 or NEW.reg_date > reg_deadline THEN
 RETURN NULL;
+ELSE
+RETURN NEW;
 END IF;
 
 END;
@@ -313,7 +332,7 @@ $$ LANGUAGE plpgsql;
 
 --checks if a customer has already registered for a course session for a particular course using course package redemption
 CREATE TRIGGER redemption_limit_trigger
-BEFORE INSERT ON Redeems
+BEFORE INSERT OR UPDATE ON Redeems
 FOR EACH ROW EXECUTE FUNCTION redemption_limit_func();
 
 CREATE OR REPLACE FUNCTION redemption_limit_func() RETURNS TRIGGER
@@ -342,10 +361,17 @@ where NEW.course_id = course_id;
 
 IF num_reg > 0 or num_redeem > 0 or NEW.redeem_date > reg_deadline THEN
 RETURN NULL;
+ELSE
+RETURN NEW;
 END IF;
 
 END;
 $$ LANGUAGE plpgsql;
+
+--check if a customer has more than 1 active/partially active packages
+CREATE TRIGGER package_trigger
+BEFORE INSERT OR UPDATE ON Buys
+FOR EACH ROW EXECUTE FUNCTION package_func();
 
 CREATE OR REPLACE FUNCTION package_func() RETURNS TRIGGER
 AS $$
@@ -373,12 +399,9 @@ and (S1.session_date - now() >= 7)
 
 IF num_active_pkg > 1 or num_partially_active_pkg > 1 THEN
 RETURN NULL;
+ELSE
+RETURN NEW;
 END IF;
 
 END;
 $$ LANGUAGE plpgsql;
-
---check if a customer has more than 1 active/partially active packages
-CREATE TRIGGER package_trigger
-BEFORE INSERT ON Buys
-FOR EACH ROW EXECUTE FUNCTION package_func();
