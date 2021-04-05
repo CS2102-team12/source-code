@@ -984,7 +984,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 4
-create or replace procedure update_credit_card(in customer_id int, in c_number int,
+create or replace procedure update_credit_card(in customer_id int, in c_number bigint,
 in ex_date date, in c_cvv int) as $$
 
 BEGIN
