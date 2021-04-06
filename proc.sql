@@ -85,7 +85,7 @@ RETURNS TABLE(_room_id INT, _room_capacity INT, _day DATE, _available_hours INT[
 DECLARE
     _counter DATE;
     _row RECORD;
-    _hour RECORD;
+    _hour INT;
 BEGIN
     IF _start_date IS NULL OR _end_date IS NULL OR _end_date < _start_date THEN
         RAISE EXCEPTION 'Invalid arguments!';
@@ -94,30 +94,31 @@ BEGIN
     for _row in select rid, seating_capacity FROM Rooms ORDER BY rid
     loop
         _counter := _start_date;
-        _room_id := row.rid;
+        _room_id := _row.rid;
         _room_capacity := _row.seating_capacity;
         WHILE _counter <= _end_date LOOP
             IF extract(dow from _counter) = 0 OR extract(dow from _counter) = 6 THEN
+				_counter := _counter + make_interval(days := 1);
                 CONTINUE;
             END IF;
 
-            _available_hours := ARRAY[];
+            _available_hours := '{}';
 
             for _hour in 9..11 loop
                 if NOT _hour <@ ANY(
-                    SELECT int4range(extract(hour from start_time),extract(hour from end_time)) 
+                    SELECT int4range(extract(hour from start_time)::int,extract(hour from end_time)::int) 
                     FROM Sessions WHERE rid = _room_id and session_date = _counter
                 ) THEN
-                    _available_hours := _available_hours || Array[_hour];
+                    _available_hours := _available_hours || _hour;
                 END IF;
             end loop;
 
-            for _hour in 2..5 loop
+            for _hour in 14..17 loop
                 if NOT _hour <@ ANY(
-                    SELECT int4range(extract(hour from start_time),extract(hour from end_time)) 
+                    SELECT int4range(extract(hour from start_time)::int,extract(hour from end_time)::int) 
                     FROM Sessions WHERE rid = _room_id and session_date = _counter
                 ) THEN
-                    _available_hours := _available_hours || Array[_hour];
+                    _available_hours := _available_hours || _hour;
                 END IF;
             end loop;
             _day := _counter;
@@ -250,7 +251,7 @@ $$ LANGUAGE plpgsql;
 -- 22
 CREATE OR REPLACE PROCEDURE update_room (_course_id INT, _launch_date DATE, _session_number INT, _new_room_id INT) AS $$
 DECLARE
-    _session_date INT;
+    _session_date DATE;
     _session_start_hour INT;
     _session_duration INTERVAL;
 BEGIN
@@ -365,22 +366,22 @@ BEGIN
         _month := date_part('month', _date);
         _year := date_part('year', _date);
         
-        SELECT SUM(amount) INTO _salary_paid FROM Pay_slips 
-        WHERE date_part('year',payment_date) = _year AND date_part('month',start_date) = _month;
+        SELECT COALESCE(SUM(amount),0) INTO _salary_paid FROM Pay_slips 
+        WHERE date_part('year',payment_date) = _year AND date_part('month',payment_date) = _month;
 
-        SELECT SUM(price) INTO _sales_course_packages FROM Buys NATURAL JOIN Course_packages
+        SELECT COALESCE(SUM(price),0) INTO _sales_course_packages FROM Buys NATURAL JOIN Course_packages
         WHERE date_part('year',buy_date) = _year AND date_part('month',buy_date) = _month;
 
-        SELECT SUM(fees) INTO _registration_via_credit FROM (Course_offerings NATURAL JOIN Registers) CR
+        SELECT COALESCE(SUM(fees),0) INTO _registration_via_credit FROM (Course_offerings NATURAL JOIN Registers) CR
         WHERE date_part('year',reg_date) = _year AND date_part('month',reg_date) = _month AND NOT EXISTS (
             SELECT 1 FROM Redeems WHERE redeem_date = CR.reg_date AND card_number = CR.card_number 
             AND cust_id = CR.cust_id AND sid = CR.sid AND course_id = CR.course_id AND launch_date = CR.launch_date 
         );
 
-        SELECT SUM(refund_amt) INTO _refunded_registration_fees FROM Cancels 
+        SELECT COALESCE(SUM(refund_amt),0) INTO _refunded_registration_fees FROM Cancels 
         WHERE date_part('year',cancel_date) = _year AND date_part('month',cancel_date) = _month;
 
-        SELECT COUNT(*) INTO _num_redemptions FROM Redeems 
+        SELECT COALESCE(COUNT(*),0) INTO _num_redemptions FROM Redeems 
         WHERE date_part('year',redeem_date) = _year AND date_part('month',redeem_date) = _month;
 
         RETURN NEXT;
