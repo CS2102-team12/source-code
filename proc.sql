@@ -198,7 +198,7 @@ CREATE OR REPLACE PROCEDURE register_session( _customer_id INT, _course_id INT, 
 DECLARE
     _buy_date DATE;
     _package_id int;
-    _card_number int;
+    _card_number bigint;
 BEGIN
     IF _customer_id IS NULL OR _course_id IS NULL OR _launch_date IS NULL OR _session_number IS NULL OR _use_package IS NULL THEN
         RAISE EXCEPTION 'All arguments cannot be null!';
@@ -207,10 +207,12 @@ BEGIN
         SELECT sid FROM Sessions as S, Course_offerings as C
         WHERE C.course_id = S.course_id AND C.launch_date = S.launch_date 
         AND C.launch_date = _launch_date AND C.course_id = _course_id AND C.registration_deadline > CURRENT_DATE
-    )
-    OR
-    _customer_id NOT IN (SELECT cust_id FROM Customers) THEN
-        RAISE EXCEPTION 'The session or customer is invalid!';
+    ) THEN 
+		RAISE EXCEPTION 'The session is invalid!';
+	END IF;
+    
+    IF _customer_id NOT IN (SELECT cust_id FROM Customers) THEN
+        RAISE EXCEPTION 'The customer is invalid!';
     END IF;
 
     IF (
