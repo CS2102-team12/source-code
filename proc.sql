@@ -52,7 +52,7 @@ BEGIN
     RETURN QUERY
     WITH Filtered_Instructors AS (
         SELECT I.eid FROM Instructors I, Specializes S,  (Course_areas NATURAL JOIN Courses) AS Y
-        WHERE S.name = Y.name  AND S.eid = I.eid;
+        WHERE S.name = Y.name AND S.eid = I.eid AND
         -- Find all instructors with matching speciality 
         Y.course_id = _course_id 
         EXCEPT
@@ -184,7 +184,7 @@ BEGIN
             _start_date := _row.start_date;
             _end_date := _row.end_date;
             _deadline := _row.registration_deadline;
-            _course_fees := _row._course_fees;
+            _course_fees := _row.fees;
             _num_remaining_seats := _row.seating_capacity - _num_redemptions;
             RETURN NEXT;
         END IF;
