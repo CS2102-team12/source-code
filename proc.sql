@@ -1109,8 +1109,8 @@ $$ LANGUAGE plpgsql;
 
 -- 18
 create or replace function get_my_registrations(in cid int)
-returns table(course_name text, course_fee numeric, session_date date,
-start_time time, session_duration interval, instructor text) as $$
+returns table(course_name text, course_fee numeric, session_date_ date,
+start_time_ time, session_duration_ interval, instructor_ text) as $$
 
 BEGIN
     RETURN QUERY(WITH r1 AS (SELECT cust_id, sid, course_id, launch_date FROM Registers),
