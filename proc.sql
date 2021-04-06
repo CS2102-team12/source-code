@@ -185,7 +185,7 @@ BEGIN
             _end_date := _row.end_date;
             _deadline := _row.registration_deadline;
             _course_fees := _row.fees;
-            _num_remaining_seats := _row.seating_capacity - _num_redemptions;
+            _num_remaining_seats := _row.seating_capacity - _number_registrations;
             RETURN NEXT;
         END IF;
     END LOOP;
