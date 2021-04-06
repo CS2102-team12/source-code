@@ -1,3 +1,26 @@
+/* add courses. */
+create or replace procedure add_course_in_bulk() as $$
+BEGIN
+    call add_course('C1', 'this is a course', 'Chemistry', 2);
+    call add_course('C2', 'this is a course', 'Physics', 2);
+    call add_course('C3', 'this is a course', 'Human Resource', 2);
+    call add_course('C4', 'this is a course', 'a', 2);
+    call add_course('C5', 'this is a course', 'b', 2);
+    call add_course('C6', 'this is a course', 'c', 2);
+    call add_course('C7', 'this is a course', 'p', 2);
+    call add_course('C8', 'this is a course', 'q', 2);
+    call add_course('C9', 'this is a course', 'r', 2);
+    call add_course('C10', 'this is a course', 's', 2);
+    call add_course('C11', 'this is a course', 'a', 2);
+    call add_course('C12', 'this is a course', 'Physics', 2);
+    call add_course('C13', 'this is a course', 'Chemistry', 2);
+    call add_course('C14', 'this is a course', 'Human Resource', 2);
+    call add_course('C15', 'this is a course', 's', 2);
+END;
+$$ LANGUAGE plpgsql;
+
+call add_course_in_bulk();
+
 CALL add_customer ('Sapphira Swinley','1526 Jenna Park','124-648-8011','sswinley0@ehow.com',337941961691093,'2022-11-30',568);
 CALL add_customer ('Hans Riddiough','35192 Atwood Circle','708-920-4203','hriddiough1@loc.gov',337941239704397,'2022-05-14',613);
 CALL add_customer ('Willabella Christescu','2900 Sauthoff Trail','263-218-2174','wchristescu2@admin.ch',375673994596261,'2022-11-11',429);
