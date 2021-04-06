@@ -51,8 +51,8 @@ BEGIN
 
     RETURN QUERY
     WITH Filtered_Instructors AS (
-        SELECT X.eid FROM (Instructors NATURAL JOIN Specializes) AS X,  (Course_areas NATURAL JOIN Courses) AS Y
-        WHERE X.name = Y.name  AND
+        SELECT I.eid FROM Instructors I, Specializes S,  (Course_areas NATURAL JOIN Courses) AS Y
+        WHERE S.name = Y.name  AND S.eid = I.eid;
         -- Find all instructors with matching speciality 
         Y.course_id = _course_id 
         EXCEPT
