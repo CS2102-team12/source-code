@@ -79,3 +79,48 @@ CALL add_course_package ('L',10,'2021-03-05','2021-05-03',100);
 CALL add_course_package ('M',100,'2021-02-01','2021-03-03',1000);
 CALL add_course_package ('N',11,'2021-01-01','2023-12-30',110);
 CALL add_course_package ('O',15,'2021-05-05','2023-05-05',1001);
+                                                                                                                                        
+                                                                                                                                        
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(1 ,'LT1','50');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(2 ,'LT2','25');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(3 ,'LT3','50');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(4 ,'LT4','22');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(5 ,'LT5','55');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(6 ,'LT6','50');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(7 ,'LT7','67');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(8 ,'LT8','81');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(9 ,'LT9','33');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(10 ,'LT10','35');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(11 ,'LT11','71');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(12 ,'LT12','72');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(13 ,'LT13','21');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(14 ,'LT14','31');
+INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(15 ,'LT15','14');
+
+call  add_course_offering(0, date  '2020-04-05',631.33,date  '2020-10-01',48470,2,'(2020-11-27,16,2)','(2020-10-23,09,3)','(2020-11-03,10,1)'); 
+call  add_course_offering(2 , date  '2020-02-10' ,91.01, date  '2020-09-04' ,4602,5, '(2020-11-06,10,1)',  '(2020-12-02,15,4)'); 
+call  add_course_offering(3 , date  '2020-10-23' ,517.71, date  '2020-12-11' ,18563,7, '(2020-11-27,16,2)',  '(2020-10-23,9,3)',  '(2020-11-03,10,1)'); 
+call  add_course_offering(4 , date  '2021-02-10' ,962.80, date  '2021-03-01' ,922,6, '(2021-05-17,14,1)',  '(2021-05-21,16,10)',  '(2021-06-01,12,14)'); 
+call  add_course_offering(4 , date  '2021-02-10' ,962.80, date  '2021-03-01' ,922,5, '(2021-05-17,15,1)',  '(2021-05-21,16,10)',  '(2021-06-01,14,13)'); 
+call  add_course_offering(5 , date  '2021-02-28' ,511.29, date  '2021-03-27' ,9,2, '(2021-04-6,10,7)',  '(2021-04-09,9,5)',  '(2021-05-05,10,9)'); 
+call  add_course_offering(6 , date  '2021-04-18' ,795.08, date  '2021-06-24' ,49810,7, '(2021-07-05,9,3)',  '(2021-07-12,10,12)',  '(2021-08-10,16,8)'); 
+call  add_course_offering(7 , date  '2020-11-16' ,108.96, date  '2021-03-27' ,650,5, '(2021-04-12,14,11)',  '(2021-04-29,16,15)',  '(2021-04-09,10,11)'); 
+call  add_course_offering(8 , date  '2021-03-08' ,925.38, date  '2021-06-01' ,61,2, '(2021-08-12,16,5)',  '(2021-10-31,9,14)'); 
+call  add_course_offering(9 , date  '2021-03-15' ,273.06, date  '2021-04-10' ,9,5, '(2021-06-09,10,2)',  '(2021-06-23,14,3)',  '(2021-06-29,15,1)'); 
+call  add_course_offering(10 , date  '2020-04-18' ,645.79, date  '2020-06-29' ,8340,7, '(2020-09-08,16,13)',  '(2020-09-25,9,3)'); 
+call  add_course_offering(11 , date  '2020-07-29' ,534.47, date  '2020-09-23' ,30621,5, '(2020-11-26,16,10)',  '(2020-10-23,9,3)',  '(2020-11-25,10,6)'); 
+call  add_course_offering(12 , date  '2020-05-08' ,549.12, date  '2020-07-25' ,18,6, '(2020-08-13,10,7)',  '(2020-08-28,16,9)'); 
+call  add_course_offering(13 , date  '2020-07-29' ,31.28, date  '2020-10-12' ,785,5, '(2020-11-30,10,8)',  '(2020-12-16,9,11)'); 
+call  add_course_offering(14 , date  '2021-02-09' ,410.86, date  '2021-04-04' ,3149,2, '(2021-04-30,17,5)',  '(2021-05-06,14,6)'); 
+call  add_course_offering(14 , date  '2021-02-09' ,410.86, date  '2021-04-04' ,3149,2, '(2021-04-30,10,5)',  '(2021-05-06,14,6)'); 
+call  add_course_offering(15 , date  '2020-12-03' ,329.53, date  '2021-02-04' ,6,5, '(2021-02-14,17,10)',  '(2021-02-23,10,15)',  '(2021-03-25,14,11)'); 
+call  add_course_offering(1 , date  '2020-04-05' ,631.33, date  '2020-10-01' ,48470,7, '(2020-11-27,17,2)',  '(2020-10-23,9,3)',  '(2020-11-03,10,1)'); 
+call  add_course_offering(11 , date  '2020-07-29' ,534.47, date  '2020-09-23' ,30621,5, '(2020-11-26,16,10)',  '(2020-10-23,9,4)',  '(2020-11-25,10,6)'); 
+call  add_course_offering(3 , date  '2020-10-23' ,517.71, date  '2020-12-11' ,18563,2, '(2020-12-30,16,14)',  '(2021-01-06,9,12)',  '(2021-01-21,14,4)'); 
+
+select get_my_course_package(0);
+select get_my_course_package(1);
+
+select pay_salary();
+select top_packages(1);
+select top_packages(2);
