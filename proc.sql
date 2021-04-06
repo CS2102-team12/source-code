@@ -431,11 +431,12 @@ fees numeric, deadline date, target_num int, admin_id int, VARIADIC sessions inf
 AS $$
 DECLARE
     end_time_derv time;
-    _seating_capacity int;
+    _seating_capacity int := 0;
     room_id int;
     all_instructors boolean := TRUE;
-    earliest_session information_session := $7[0];
-    latest_session information_session := $7[0];
+    current_session int := 1;
+    earliest_session information_session;
+    latest_session information_session;
     current_session_number int := 1;
     duration int := (SELECT duration FROM Courses AS C WHERE C.course_id = course_id_in);
     course_area text := (SELECT name FROM Courses AS C WHERE C.course_id = course_id_in);
@@ -453,17 +454,31 @@ BEGIN
 
     FOREACH new_session IN ARRAY $7
     LOOP
+        room_id := new_session.room_id;
+        _seating_capacity := _seating_capacity + (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
+        IF (current_session = 1) THEN
+            earliest_session := new_session;
+            latest_session := new_session;
+            current_session := current_session + 1;
+            CONTINUE;
+        END IF;
 
         -- find start date
         IF (new_session.session_date < earliest_session.session_date) THEN
-            earliest_session = new_session;
+            earliest_session := new_session;
         END IF;
-
         --find end date
         IF (new_session.session_date > latest_session.session_date) THEN
-            latest_session = new_session;
+            latest_session := new_session;
         END IF;
+    END LOOP;
 
+    INSERT INTO Course_offerings(launch_date, start_date, end_date, registration_deadline, target_number_registrations, seating_capacity, fees, eid, mid, course_id)
+    VALUES (launch_date_in, earliest_session.session_date, latest_session.session_date, deadline, target_num, _seating_capacity, fees, admin_id, mid, course_id_in);
+
+    FOREACH new_session IN ARRAY $7
+    LOOP
+        room_id := new_session.room_id;
         --check if weekday
         IF (EXTRACT(dow FROM new_session.session_date::timestamp) = 6 OR EXTRACT(dow FROM new_session.session_date::timestamp) = 0) THEN
             ROLLBACK;
@@ -473,8 +488,6 @@ BEGIN
 
         start_time_derv := make_time(new_session.start_hour,0,0);
         end_time_derv := make_time(new_session.start_hour + duration,0,0);
-        room_id := new_session.room_id;
-        _seating_capacity := _seating_capacity + (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
         -- check if room currently has a clashing class
         IF EXISTS(SELECT 1 FROM Sessions AS S WHERE S.session_date = new_session.session_date AND S.rid = room_id AND
         (S.start_time < start_time_derv OR S.end_time > end_time_derv)) THEN
@@ -487,14 +500,14 @@ BEGIN
         IF (((start_time_derv >= make_time(9,0,0) and start_time_derv < make_time(12,0,0)) or (start_time_derv >= make_time(14,0,0) and start_time_derv < make_time(18,0,0))) AND (end_time_derv <= make_time(18,0,0) OR (end_time_derv <= make_time(12,0,0) AND end_time_derv >= make_time(14,0,0)))) THEN
 
             --check if there is session from same course offering with the same day and time
-            IF EXISTS (SELECT 1 FROM Sessions AS S WHERE S.course_id = course_id_in AND S.launch_date = launch_date_in AND S.start_time = new_session.start_time) THEN
+            IF EXISTS (SELECT 1 FROM Sessions AS S WHERE S.course_id = course_id_in AND S.launch_date = launch_date_in AND S.start_time = start_time_derv) THEN
                 ROLLBACK;
                 RAISE EXCEPTION 'There is 2 sessions in the same day and time.';
                 RETURN;
             END IF;
 
             --valid session, check if there is an instructor available to teach this session
-            SELECT eid INTO possible_instructor FROM (SELECT find_instructors(course_id_in, new_session.session_date, new_session.start_hour)) AS X LIMIT 1;
+            SELECT eid INTO possible_instructor FROM (SELECT * FROM find_instructors(course_id_in, new_session.session_date, new_session.start_hour)) AS X LIMIT 1;
 
             -- no full-time or part-time instructor is free
             IF (possible_instructor IS NULL) THEN
@@ -504,23 +517,19 @@ BEGIN
                 RETURN;
             END IF;
         END IF;
-
+        RAISE NOTICE 'Calling find start date(%)', possible_instructor;
         --insert this session into Sessions table
         INSERT INTO Sessions(sid, session_date, start_time, end_time, rid, eid, launch_date, course_id)
         VALUES (current_session_number, new_session.session_date, start_time_derv, end_time_derv, room_id, possible_instructor, launch_date_in, course_id_in);
-
+        current_session_number := current_session_number + 1;
+        RAISE NOTICE 'Calling find start date(%)', new_session.room_id;
     END LOOP;
 
     --valid course offering with deadline at least 10 days from earliest session
-    IF (deadline - earliest_session.session_date < 10) THEN
+    IF (earliest_session.session_date - deadline < 10) THEN
         ROLLBACK;
         RAISE EXCEPTION 'Deadline for course offering is less than 10 days from earliest session.';
         RETURN;
-    END IF;
-
-    IF (all_instructors) THEN
-        INSERT INTO Course_offerings(launch_date, start_date, end_date, registration_deadline, target_number_registrations, seating_capacity, fees, eid, mid)
-        VALUES (launch_date_in, earliest_session.session_date, latest_session.session_date, deadline, target_num, seating_capacity, fees, eid, mid);
     END IF;
     COMMIT;
 
@@ -550,7 +559,9 @@ BEGIN
 
         --check if the last redeemed session could still be cancelled
         SELECT session_date INTO latest_session_date FROM (Redeems NATURAL JOIN Sessions) AS X WHERE X.cust_id = cust_id_in ORDER BY redeem_date DESC LIMIT 1;
-        IF (EXTRACT(DATE FROM NOW()) > EXTRACT(DATE FROM latest_session_date)) THEN
+        IF (latest_session_date IS NULL) THEN
+            RAISE EXCEPTION 'You do not have any active or partially active course package.';
+        ELSIF (CURRENT_DATE > latest_session_date) THEN
             RAISE EXCEPTION 'You do not have any active or partially active course package.';
         END IF;
     ELSE
@@ -572,7 +583,7 @@ BEGIN
         jsonb_build_object('redeemed_course_name', name, 'redeemed_session_date', session_date, 'redeemed_start_time', start_time)
         )
       FROM pre_json
-    ) SELECT json_agg(row_to_json(t))::jsonb INTO sessions_info FROM final_json;
+    ) SELECT json_agg(row_to_json(js))::jsonb INTO sessions_info FROM final_json JS;
 
     final := (select package_info_without_sessions || sessions_info);
     RETURN final::json;
@@ -591,7 +602,7 @@ DECLARE
 BEGIN
     SELECT launch_date, course_id, rid INTO new_session_launch_date, new_session_course_id, room_id
     FROM Sessions
-    WHERE sid = session_id;
+    WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in;
     IF (new_session_course_id = session_id AND new_session_launch_date = launch_date_in) THEN
         seating_limit := (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
         total_count := total_count + (SELECT count(*) FROM Registers WHERE sid = session_id);
@@ -692,7 +703,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION pay_salary()
 RETURNS TABLE (employee_id int, employee_name text, status text, number_of_work_days int, work_hours int, hourly_rate numeric, monthly_salary numeric, salary_amount_paid numeric) AS $$
 DECLARE
-    current_month date := (SELECT EXTRACT(MONTH FROM NOW()));
+    current_month int := (SELECT DATE_PART('month', NOW()));
     current_month_days int := (SELECT EXTRACT(days FROM date_trunc('month', NOW()) + interval '1 month - 1 day')::int);
     curs CURSOR for (SELECT * FROM Employees ORDER BY eid ASC);
     r RECORD;
@@ -707,58 +718,73 @@ BEGIN
         EXIT WHEN NOT FOUND;
         current_eid := r.eid;
         employee_id := current_eid;
-        SELECT dep_date, join_date, name INTO departure_date, joined_date, employee_name
+        SELECT depart_date, join_date, name INTO departure_date, joined_date, employee_name
         FROM Employees
         WHERE eid = current_eid;
         IF EXISTS(SELECT 1 FROM Full_time_Emp AS FT WHERE FT.eid = current_eid) THEN
-            monthly_salary := (SELECT monthly_salary FROM Full_time_Emp WHERE eid = current_eid);
+            monthly_salary := (SELECT FT.monthly_salary FROM Full_time_Emp AS FT WHERE eid = current_eid);
             status := 'Full-time';
             work_hours := NULL;
             hourly_rate := NULL;
+            
 
             --full time and leaving
             IF (departure_date IS NOT NULL AND (EXTRACT(MONTH FROM departure_date) = current_month)) THEN
                 -- join and leave in the same current month
                 IF (EXTRACT(MONTH FROM joined_date) = current_month) THEN
                     number_of_work_days := EXTRACT(DAY FROM departure_date)::int - EXTRACT(DAY FROM joined_date)::int + 1;
-                    salary_amount_paid := monthly_salary * (number_of_work_days/current_month_days);
+                    salary_amount_paid := monthly_salary * (number_of_work_days::double precision/current_month_days);
+                    salary_amount_paid := round(salary_amount_paid::numeric, 2);
+                    
                     -- add into pay_slips table
                     INSERT INTO Pay_slips (payment_date, amount, num_work_hours, num_work_days, eid)
                     VALUES (NOW(), salary_amount_paid, NULL, number_of_work_days, current_eid);
 
                     RETURN NEXT;
+                    CONTINUE;
 
                 --join different from current month, leave in current month
                 ELSE
                     number_of_work_days := EXTRACT(DAY FROM departure_date) - 1 + 1;
-                    salary_amount_paid := monthly_salary * (number_of_work_days/current_month_days);
+                    salary_amount_paid := monthly_salary * (number_of_work_days::double precision/current_month_days);
+                    salary_amount_paid := round(salary_amount_paid::numeric, 2);
                     -- add into pay_slips table
                     INSERT INTO Pay_slips (payment_date, amount, num_work_hours, num_work_days, eid)
                     VALUES (NOW(), salary_amount_paid, NULL, number_of_work_days, current_eid);
 
                     RETURN NEXT;
+                    CONTINUE;
                 END IF;
             END IF;
             number_of_work_days := current_month_days;
             salary_amount_paid := monthly_salary;
+            work_hours := NULL;
+            hourly_rate := NULL;
+            salary_amount_paid := round(salary_amount_paid::numeric, 2);
+            INSERT INTO Pay_slips (payment_date, amount, num_work_hours, num_work_days, eid)
+            VALUES (NOW(), salary_amount_paid, NULL, number_of_work_days, current_eid);
             RETURN NEXT;
 
         ELSIF EXISTS(SELECT 1 FROM Part_time_Emp AS PT WHERE PT.eid = current_eid) THEN
-            hourly_rate := (select hourly_rate FROM Part_time_Emp WHERE eid = current_eid);
+            hourly_rate := (select PT.hourly_rate FROM Part_time_Emp AS PT WHERE eid = current_eid);
             status := 'Part-time';
             WITH calc_hours AS (
                 SELECT (end_time - start_time) AS duration
                 FROM Sessions
                 WHERE eid = current_eid AND (EXTRACT(MONTH FROM session_date) = current_month)
             ) SELECT sum(duration) INTO work_hours FROM calc_hours;
+
+            IF (work_hours IS NULL) THEN
+                work_hours := 0;
+            END IF;
+
             salary_amount_paid := work_hours * hourly_rate;
+            salary_amount_paid := round(salary_amount_paid::numeric, 2);
             monthly_salary := NULL;
             number_of_work_days := NULL;
-
             -- add into pay_slips table
             INSERT INTO Pay_slips (payment_date, amount, num_work_hours, num_work_days, eid)
             VALUES (NOW(), salary_amount_paid, work_hours, NULL, current_eid);
-
             RETURN NEXT;
         END IF;
     END LOOP;
@@ -884,10 +910,26 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 27
+CREATE OR REPLACE FUNCTION retrieve_top_packages(N int)
+RETURNS TABLE (package_id int, total int) AS $$
+BEGIN
+    RETURN QUERY
+    WITH filter_packages AS (
+        SELECT * FROM (SELECT W.package_id, sale_start_date, price FROM Course_packages AS W) AS X NATURAL JOIN Buys WHERE EXTRACT(YEAR FROM sale_start_date) = EXTRACT(YEAR FROM NOW())
+    ), packages_with_count AS (
+        SELECT FP.package_id, count(FP.package_id)::int AS amount FROM filter_packages AS FP GROUP BY FP.package_id
+    ), counts AS (
+        SELECT DISTINCT count(FP.package_id)::int AS amount FROM filter_packages AS FP GROUP BY FP.package_id
+    ), top_N_count AS (
+        SELECT DISTINCT amount FROM counts ORDER BY amount DESC LIMIT N
+    ) select Y.package_id, amount from (packages_with_count AS PC natural join top_N_count natural join Course_packages) AS Y ORDER BY amount DESC, price DESC;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION top_packages(N int)
 RETURNS TABLE (package_identifier int, free_sessions int, price numeric, start_date date, end_date date, num_sold int) AS $$
 DECLARE
-    curs CURSOR FOR (SELECT retrieve_top_packages(N));
+    curs CURSOR FOR (SELECT package_id, total FROM retrieve_top_packages(N));
     r RECORD;
     current_package_id int;
 BEGIN
@@ -896,13 +938,13 @@ BEGIN
         LOOP
             FETCH curs INTO r;
             EXIT WHEN NOT FOUND;
-            current_package_id := curs.package_id;
+            current_package_id := r.package_id;
             package_identifier := current_package_id;
-            num_sold := curs.total;
+            num_sold := r.total;
             free_sessions := (SELECT num_free_registrations FROM Course_packages WHERE package_id = current_package_id);
-            price := (SELECT price FROM Course_packages WHERE package_id = current_package_id);
-            start_date := (SELECT sale_start_date FROM Course_packages WHERE package_id = current_package_id);
-            end_date := (SELECT sale_end_date FROM Course_packages WHERE package_id = current_package_id);
+            price := (SELECT CP.price FROM Course_packages AS CP WHERE CP.package_id = current_package_id);
+            start_date := (SELECT sale_start_date FROM Course_packages AS CP WHERE CP.package_id = current_package_id);
+            end_date := (SELECT sale_end_date FROM Course_packages AS CP WHERE CP.package_id = current_package_id);
             RETURN NEXT;
         END LOOP;
     CLOSE curs;
@@ -1002,17 +1044,17 @@ create or replace function find_rooms(in s_date date, in s_hour time, in s_durat
 returns table(rid int) as $$
 
 BEGIN
-    RETURN QUERY(SELECT rid FROM Rooms
+    RETURN QUERY(
+    SELECT r1.rid FROM Rooms r1
     EXCEPT
-    SELECT rid FROM Sessions
-    WHERE session_date = s_date
+    SELECT s1.rid FROM Sessions s1
+    WHERE s1.session_date = s_date
     AND ((end_time <= s_hour + s_duration AND end_time >= s_hour)
-        OR (start_time >= s_hour AND start_time <= s_hour + s_duration)
+        OR (start_time >= s_hour AND start_time <= s_hour +  s_duration)
 	OR (start_time <= s_hour AND end_time >= s_hour + s_duration)));
 
 END;
 $$ LANGUAGE plpgsql;
-
 
 -- 11
 create or replace procedure add_course_package(in p_name text, in n_free int, 
@@ -1039,37 +1081,37 @@ create or replace function get_available_course_packages()
 returns table(name text, num_free_registrations int, sale_end_date date, price numeric) as $$
 
 BEGIN
-    RETURN QUERY(SELECT name, num_free_registrations, sale_end_date, price
-    FROM Course_packages
-    WHERE sale_end_date >= current_date);
+    RETURN QUERY(SELECT c1.name, c1.num_free_registrations, c1.sale_end_date, c1.price
+    FROM Course_packages as c1
+    WHERE c1.sale_end_date >= current_date);
 
 END;
 $$ LANGUAGE plpgsql;
 
 -- 16
 create or replace function get_available_course_sessions(in l_date date, in cid int)
-returns table(session_date date, start_time time, instructor text, num_remaining_seats int) as $$
+returns table(session_date date, start_time time, instructor text, num_remaining_seats bigint) as $$
 DECLARE
     s_capacity int;
 
 BEGIN
-    RETURN QUERY(SELECT seating_capacity INTO s_capacity FROM Course_offerings
+    SELECT seating_capacity INTO s_capacity FROM Course_offerings
     WHERE l_date = launch_date AND cid = course_id;
 
-    SELECT session_date, start_time, name as instructor, 
-    s_capacity - count(distinct cust_id) as num_remaining_seats
-    FROM (Sessions natural join (SELECT eid, name FROM Employees) as foo1)
-        natural join (SELECT cust_id, sid FROM Registers) as foo2
+    RETURN QUERY(SELECT s1.session_date, s1.start_time, s1.name as instructor, 
+    s_capacity - count(distinct s1.cust_id) as num_remaining_seats
+    FROM ((Sessions natural join (SELECT eid, name FROM Employees) as foo1)
+        natural join (SELECT cust_id, sid FROM Registers) as foo2) as s1
     WHERE l_date = launch_date AND cid = course_id
-    GROUP BY session_date, start_time, name
-    ORDER BY (session_date, start_time) asc);
+    GROUP BY s1.session_date, s1.start_time, s1.name
+    ORDER BY (s1.session_date, s1.start_time) asc);
 END;
 $$ LANGUAGE plpgsql;
 
 -- 18
 create or replace function get_my_registrations(in cid int)
-returns table(course_name text, course_fee numeric, session_date date,
-start_time time, session_duration interval, instructor text) as $$
+returns table(course_name text, course_fee numeric, session_date_ date,
+start_time_ time, session_duration_ interval, instructor_ text) as $$
 
 BEGIN
     RETURN QUERY(WITH r1 AS (SELECT cust_id, sid, course_id, launch_date FROM Registers),
