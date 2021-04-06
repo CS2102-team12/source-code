@@ -430,11 +430,12 @@ fees numeric, deadline date, target_num int, admin_id int, VARIADIC sessions inf
 AS $$
 DECLARE
     end_time_derv time;
-    _seating_capacity int;
+    _seating_capacity int := 0;
     room_id int;
     all_instructors boolean := TRUE;
-    earliest_session information_session := $7[0];
-    latest_session information_session := $7[0];
+    current_session int := 1;
+    earliest_session information_session;
+    latest_session information_session;
     current_session_number int := 1;
     duration int := (SELECT duration FROM Courses AS C WHERE C.course_id = course_id_in);
     course_area text := (SELECT name FROM Courses AS C WHERE C.course_id = course_id_in);
@@ -452,17 +453,31 @@ BEGIN
 
     FOREACH new_session IN ARRAY $7
     LOOP
+        room_id := new_session.room_id;
+        _seating_capacity := _seating_capacity + (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
+        IF (current_session = 1) THEN
+            earliest_session := new_session;
+            latest_session := new_session;
+            current_session := current_session + 1;
+            CONTINUE;
+        END IF;
 
         -- find start date
         IF (new_session.session_date < earliest_session.session_date) THEN
-            earliest_session = new_session;
+            earliest_session := new_session;
         END IF;
-
         --find end date
         IF (new_session.session_date > latest_session.session_date) THEN
-            latest_session = new_session;
+            latest_session := new_session;
         END IF;
+    END LOOP;
 
+    INSERT INTO Course_offerings(launch_date, start_date, end_date, registration_deadline, target_number_registrations, seating_capacity, fees, eid, mid, course_id)
+    VALUES (launch_date_in, earliest_session.session_date, latest_session.session_date, deadline, target_num, _seating_capacity, fees, admin_id, mid, course_id_in);
+
+    FOREACH new_session IN ARRAY $7
+    LOOP
+        room_id := new_session.room_id;
         --check if weekday
         IF (EXTRACT(dow FROM new_session.session_date::timestamp) = 6 OR EXTRACT(dow FROM new_session.session_date::timestamp) = 0) THEN
             ROLLBACK;
@@ -472,8 +487,6 @@ BEGIN
 
         start_time_derv := make_time(new_session.start_hour,0,0);
         end_time_derv := make_time(new_session.start_hour + duration,0,0);
-        room_id := new_session.room_id;
-        _seating_capacity := _seating_capacity + (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
         -- check if room currently has a clashing class
         IF EXISTS(SELECT 1 FROM Sessions AS S WHERE S.session_date = new_session.session_date AND S.rid = room_id AND
         (S.start_time < start_time_derv OR S.end_time > end_time_derv)) THEN
@@ -486,14 +499,14 @@ BEGIN
         IF (((start_time_derv >= make_time(9,0,0) and start_time_derv < make_time(12,0,0)) or (start_time_derv >= make_time(14,0,0) and start_time_derv < make_time(18,0,0))) AND (end_time_derv <= make_time(18,0,0) OR (end_time_derv <= make_time(12,0,0) AND end_time_derv >= make_time(14,0,0)))) THEN
 
             --check if there is session from same course offering with the same day and time
-            IF EXISTS (SELECT 1 FROM Sessions AS S WHERE S.course_id = course_id_in AND S.launch_date = launch_date_in AND S.start_time = new_session.start_time) THEN
+            IF EXISTS (SELECT 1 FROM Sessions AS S WHERE S.course_id = course_id_in AND S.launch_date = launch_date_in AND S.start_time = start_time_derv) THEN
                 ROLLBACK;
                 RAISE EXCEPTION 'There is 2 sessions in the same day and time.';
                 RETURN;
             END IF;
 
             --valid session, check if there is an instructor available to teach this session
-            SELECT eid INTO possible_instructor FROM (SELECT find_instructors(course_id_in, new_session.session_date, new_session.start_hour)) AS X LIMIT 1;
+            SELECT eid INTO possible_instructor FROM (SELECT * FROM find_instructors(course_id_in, new_session.session_date, new_session.start_hour)) AS X LIMIT 1;
 
             -- no full-time or part-time instructor is free
             IF (possible_instructor IS NULL) THEN
@@ -503,23 +516,19 @@ BEGIN
                 RETURN;
             END IF;
         END IF;
-
+        RAISE NOTICE 'Calling find start date(%)', possible_instructor;
         --insert this session into Sessions table
         INSERT INTO Sessions(sid, session_date, start_time, end_time, rid, eid, launch_date, course_id)
         VALUES (current_session_number, new_session.session_date, start_time_derv, end_time_derv, room_id, possible_instructor, launch_date_in, course_id_in);
-
+        current_session_number := current_session_number + 1;
+        RAISE NOTICE 'Calling find start date(%)', new_session.room_id;
     END LOOP;
 
     --valid course offering with deadline at least 10 days from earliest session
-    IF (deadline - earliest_session.session_date < 10) THEN
+    IF (earliest_session.session_date - deadline < 10) THEN
         ROLLBACK;
         RAISE EXCEPTION 'Deadline for course offering is less than 10 days from earliest session.';
         RETURN;
-    END IF;
-
-    IF (all_instructors) THEN
-        INSERT INTO Course_offerings(launch_date, start_date, end_date, registration_deadline, target_number_registrations, seating_capacity, fees, eid, mid)
-        VALUES (launch_date_in, earliest_session.session_date, latest_session.session_date, deadline, target_num, seating_capacity, fees, eid, mid);
     END IF;
     COMMIT;
 
@@ -549,7 +558,9 @@ BEGIN
 
         --check if the last redeemed session could still be cancelled
         SELECT session_date INTO latest_session_date FROM (Redeems NATURAL JOIN Sessions) AS X WHERE X.cust_id = cust_id_in ORDER BY redeem_date DESC LIMIT 1;
-        IF (EXTRACT(DATE FROM NOW()) > EXTRACT(DATE FROM latest_session_date)) THEN
+        IF (latest_session_date IS NULL) THEN
+            RAISE EXCEPTION 'You do not have any active or partially active course package.';
+        ELSIF (CURRENT_DATE > latest_session_date) THEN
             RAISE EXCEPTION 'You do not have any active or partially active course package.';
         END IF;
     ELSE
@@ -571,7 +582,7 @@ BEGIN
         jsonb_build_object('redeemed_course_name', name, 'redeemed_session_date', session_date, 'redeemed_start_time', start_time)
         )
       FROM pre_json
-    ) SELECT json_agg(row_to_json(t))::jsonb INTO sessions_info FROM final_json;
+    ) SELECT json_agg(row_to_json(js))::jsonb INTO sessions_info FROM final_json JS;
 
     final := (select package_info_without_sessions || sessions_info);
     RETURN final::json;
@@ -691,7 +702,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION pay_salary()
 RETURNS TABLE (employee_id int, employee_name text, status text, number_of_work_days int, work_hours int, hourly_rate numeric, monthly_salary numeric, salary_amount_paid numeric) AS $$
 DECLARE
-    current_month date := (SELECT EXTRACT(MONTH FROM NOW()));
+    current_month int := (SELECT DATE_PART('month', NOW()));
     current_month_days int := (SELECT EXTRACT(days FROM date_trunc('month', NOW()) + interval '1 month - 1 day')::int);
     curs CURSOR for (SELECT * FROM Employees ORDER BY eid ASC);
     r RECORD;
@@ -706,58 +717,73 @@ BEGIN
         EXIT WHEN NOT FOUND;
         current_eid := r.eid;
         employee_id := current_eid;
-        SELECT dep_date, join_date, name INTO departure_date, joined_date, employee_name
+        SELECT depart_date, join_date, name INTO departure_date, joined_date, employee_name
         FROM Employees
         WHERE eid = current_eid;
         IF EXISTS(SELECT 1 FROM Full_time_Emp AS FT WHERE FT.eid = current_eid) THEN
-            monthly_salary := (SELECT monthly_salary FROM Full_time_Emp WHERE eid = current_eid);
+            monthly_salary := (SELECT FT.monthly_salary FROM Full_time_Emp AS FT WHERE eid = current_eid);
             status := 'Full-time';
             work_hours := NULL;
             hourly_rate := NULL;
+            
 
             --full time and leaving
             IF (departure_date IS NOT NULL AND (EXTRACT(MONTH FROM departure_date) = current_month)) THEN
                 -- join and leave in the same current month
                 IF (EXTRACT(MONTH FROM joined_date) = current_month) THEN
                     number_of_work_days := EXTRACT(DAY FROM departure_date)::int - EXTRACT(DAY FROM joined_date)::int + 1;
-                    salary_amount_paid := monthly_salary * (number_of_work_days/current_month_days);
+                    salary_amount_paid := monthly_salary * (number_of_work_days::double precision/current_month_days);
+                    salary_amount_paid := round(salary_amount_paid::numeric, 2);
+                    
                     -- add into pay_slips table
                     INSERT INTO Pay_slips (payment_date, amount, num_work_hours, num_work_days, eid)
                     VALUES (NOW(), salary_amount_paid, NULL, number_of_work_days, current_eid);
 
                     RETURN NEXT;
+                    CONTINUE;
 
                 --join different from current month, leave in current month
                 ELSE
                     number_of_work_days := EXTRACT(DAY FROM departure_date) - 1 + 1;
-                    salary_amount_paid := monthly_salary * (number_of_work_days/current_month_days);
+                    salary_amount_paid := monthly_salary * (number_of_work_days::double precision/current_month_days);
+                    salary_amount_paid := round(salary_amount_paid::numeric, 2);
                     -- add into pay_slips table
                     INSERT INTO Pay_slips (payment_date, amount, num_work_hours, num_work_days, eid)
                     VALUES (NOW(), salary_amount_paid, NULL, number_of_work_days, current_eid);
 
                     RETURN NEXT;
+                    CONTINUE;
                 END IF;
             END IF;
             number_of_work_days := current_month_days;
             salary_amount_paid := monthly_salary;
+            work_hours := NULL;
+            hourly_rate := NULL;
+            salary_amount_paid := round(salary_amount_paid::numeric, 2);
+            INSERT INTO Pay_slips (payment_date, amount, num_work_hours, num_work_days, eid)
+            VALUES (NOW(), salary_amount_paid, NULL, number_of_work_days, current_eid);
             RETURN NEXT;
 
         ELSIF EXISTS(SELECT 1 FROM Part_time_Emp AS PT WHERE PT.eid = current_eid) THEN
-            hourly_rate := (select hourly_rate FROM Part_time_Emp WHERE eid = current_eid);
+            hourly_rate := (select PT.hourly_rate FROM Part_time_Emp AS PT WHERE eid = current_eid);
             status := 'Part-time';
             WITH calc_hours AS (
                 SELECT (end_time - start_time) AS duration
                 FROM Sessions
                 WHERE eid = current_eid AND (EXTRACT(MONTH FROM session_date) = current_month)
             ) SELECT sum(duration) INTO work_hours FROM calc_hours;
+
+            IF (work_hours IS NULL) THEN
+                work_hours := 0;
+            END IF;
+
             salary_amount_paid := work_hours * hourly_rate;
+            salary_amount_paid := round(salary_amount_paid::numeric, 2);
             monthly_salary := NULL;
             number_of_work_days := NULL;
-
             -- add into pay_slips table
             INSERT INTO Pay_slips (payment_date, amount, num_work_hours, num_work_days, eid)
             VALUES (NOW(), salary_amount_paid, work_hours, NULL, current_eid);
-
             RETURN NEXT;
         END IF;
     END LOOP;
