@@ -500,15 +500,13 @@ BEGIN
         IF (((start_time_derv >= make_time(9,0,0) and start_time_derv < make_time(12,0,0)) or (start_time_derv >= make_time(14,0,0) and start_time_derv < make_time(18,0,0))) AND (end_time_derv <= make_time(18,0,0) OR (end_time_derv <= make_time(12,0,0) AND end_time_derv >= make_time(14,0,0)))) THEN
 
             --check if there is session from same course offering with the same day and time
-            IF EXISTS (SELECT 1 FROM Sessions AS S WHERE S.course_id = course_id_in AND S.launch_date = launch_date_in AND S.start_time = start_time_derv) THEN
+            IF EXISTS (SELECT 1 FROM Sessions AS S WHERE S.course_id = course_id_in AND S.launch_date = launch_date_in AND S.start_time = start_time_derv AND S.session_date = new_session.session_date) THEN
                 ROLLBACK;
                 RAISE EXCEPTION 'There is 2 sessions in the same day and time.';
                 RETURN;
             END IF;
-
             --valid session, check if there is an instructor available to teach this session
             SELECT eid INTO possible_instructor FROM (SELECT * FROM find_instructors(course_id_in, new_session.session_date, new_session.start_hour)) AS X LIMIT 1;
-
             -- no full-time or part-time instructor is free
             IF (possible_instructor IS NULL) THEN
                 all_instructors := FALSE;
@@ -516,13 +514,13 @@ BEGIN
                 RAISE EXCEPTION 'There is a session without any available instructor.';
                 RETURN;
             END IF;
+        ELSE
+            RAISE EXCEPTION 'Session time is not valid.';
         END IF;
-        RAISE NOTICE 'Calling find start date(%)', possible_instructor;
         --insert this session into Sessions table
         INSERT INTO Sessions(sid, session_date, start_time, end_time, rid, eid, launch_date, course_id)
         VALUES (current_session_number, new_session.session_date, start_time_derv, end_time_derv, room_id, possible_instructor, launch_date_in, course_id_in);
         current_session_number := current_session_number + 1;
-        RAISE NOTICE 'Calling find start date(%)', new_session.room_id;
     END LOOP;
 
     --valid course offering with deadline at least 10 days from earliest session
