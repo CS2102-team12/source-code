@@ -1039,7 +1039,7 @@ $$ LANGUAGE plpgsql;
 /* session duration's type is 'interval'. */
 /* Exclude all rooms on that date that are occupied during the given session's 
 time interval. */
-create or replace function find_rooms(in s_date date, in s_hour time, in s_duration int)
+create or replace function find_rooms(in s_date date, in s_hour time, in s_duration interval)
 returns table(rid int) as $$
 
 BEGIN
@@ -1048,9 +1048,9 @@ BEGIN
     EXCEPT
     SELECT s1.rid FROM Sessions s1
     WHERE s1.session_date = s_date
-    AND ((end_time <= s_hour + make_interval(hours := s_duration) AND end_time >= s_hour)
-        OR (start_time >= s_hour AND start_time <= s_hour + make_interval(hours := s_duration))
-	OR (start_time <= s_hour AND end_time >= s_hour + make_interval(hours := s_duration))));
+    AND ((end_time <= s_hour + s_duration AND end_time >= s_hour)
+        OR (start_time >= s_hour AND start_time <= s_hour +  s_duration)
+	OR (start_time <= s_hour AND end_time >= s_hour + s_duration)));
 
 END;
 $$ LANGUAGE plpgsql;
