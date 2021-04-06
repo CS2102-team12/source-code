@@ -1043,17 +1043,17 @@ create or replace function find_rooms(in s_date date, in s_hour time, in s_durat
 returns table(rid int) as $$
 
 BEGIN
-    RETURN QUERY(SELECT rid FROM Rooms
+    RETURN QUERY(
+    SELECT r1.rid FROM Rooms r1
     EXCEPT
-    SELECT rid FROM Sessions
-    WHERE session_date = s_date
+    SELECT s1.rid FROM Sessions s1
+    WHERE s1.session_date = s_date
     AND ((end_time <= s_hour + s_duration AND end_time >= s_hour)
         OR (start_time >= s_hour AND start_time <= s_hour + s_duration)
 	OR (start_time <= s_hour AND end_time >= s_hour + s_duration)));
 
 END;
 $$ LANGUAGE plpgsql;
-
 
 -- 11
 create or replace procedure add_course_package(in p_name text, in n_free int, 
