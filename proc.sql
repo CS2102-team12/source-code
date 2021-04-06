@@ -909,10 +909,26 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 27
+CREATE OR REPLACE FUNCTION retrieve_top_packages(N int)
+RETURNS TABLE (package_id int, total int) AS $$
+BEGIN
+    RETURN QUERY
+    WITH filter_packages AS (
+        SELECT * FROM (SELECT W.package_id, sale_start_date, price FROM Course_packages AS W) AS X NATURAL JOIN Buys WHERE EXTRACT(YEAR FROM sale_start_date) = EXTRACT(YEAR FROM NOW())
+    ), packages_with_count AS (
+        SELECT FP.package_id, count(FP.package_id)::int AS amount FROM filter_packages AS FP GROUP BY FP.package_id
+    ), counts AS (
+        SELECT DISTINCT count(FP.package_id)::int AS amount FROM filter_packages AS FP GROUP BY FP.package_id
+    ), top_N_count AS (
+        SELECT DISTINCT amount FROM counts ORDER BY amount DESC LIMIT N
+    ) select Y.package_id, amount from (packages_with_count AS PC natural join top_N_count natural join Course_packages) AS Y ORDER BY amount DESC, price DESC;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION top_packages(N int)
 RETURNS TABLE (package_identifier int, free_sessions int, price numeric, start_date date, end_date date, num_sold int) AS $$
 DECLARE
-    curs CURSOR FOR (SELECT retrieve_top_packages(N));
+    curs CURSOR FOR (SELECT package_id, total FROM retrieve_top_packages(N));
     r RECORD;
     current_package_id int;
 BEGIN
@@ -921,13 +937,13 @@ BEGIN
         LOOP
             FETCH curs INTO r;
             EXIT WHEN NOT FOUND;
-            current_package_id := curs.package_id;
+            current_package_id := r.package_id;
             package_identifier := current_package_id;
-            num_sold := curs.total;
+            num_sold := r.total;
             free_sessions := (SELECT num_free_registrations FROM Course_packages WHERE package_id = current_package_id);
-            price := (SELECT price FROM Course_packages WHERE package_id = current_package_id);
-            start_date := (SELECT sale_start_date FROM Course_packages WHERE package_id = current_package_id);
-            end_date := (SELECT sale_end_date FROM Course_packages WHERE package_id = current_package_id);
+            price := (SELECT CP.price FROM Course_packages AS CP WHERE CP.package_id = current_package_id);
+            start_date := (SELECT sale_start_date FROM Course_packages AS CP WHERE CP.package_id = current_package_id);
+            end_date := (SELECT sale_end_date FROM Course_packages AS CP WHERE CP.package_id = current_package_id);
             RETURN NEXT;
         END LOOP;
     CLOSE curs;
