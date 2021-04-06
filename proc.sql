@@ -601,7 +601,7 @@ DECLARE
 BEGIN
     SELECT launch_date, course_id, rid INTO new_session_launch_date, new_session_course_id, room_id
     FROM Sessions
-    WHERE sid = session_id;
+    WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in;
     IF (new_session_course_id = session_id AND new_session_launch_date = launch_date_in) THEN
         seating_limit := (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
         total_count := total_count + (SELECT count(*) FROM Registers WHERE sid = session_id);
