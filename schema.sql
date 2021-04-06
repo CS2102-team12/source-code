@@ -200,8 +200,9 @@ primary key(redeem_date,sid,course_id,launch_date,buy_date,package_id,card_numbe
 
 --checks if the instructor specialises in the area of the session he is assigned to
 --checks if the instructor is teaching 2 consecutive sessions
-CREATE TRIGGER session_inst_trigger
-BEFORE INSERT OR UPDATE ON Sessions
+CREATE CONSTRAINT TRIGGER session_inst_trigger
+AFTER INSERT OR UPDATE OR DELETE ON Sessions
+DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION session_inst_func();
 
 CREATE OR REPLACE FUNCTION session_inst_func() RETURNS TRIGGER
@@ -266,8 +267,9 @@ $$ LANGUAGE plpgsql;
 --checks if the session to be inserted clashes with another session of the same course offering
 --checks if the room to be inserted is being used by other sessions
 --checks if the instructor assigned has other sessions at the same time
-CREATE TRIGGER session_time_trigger
-BEFORE INSERT OR UPDATE ON Sessions
+CREATE CONSTRAINT TRIGGER session_time_trigger
+AFTER INSERT OR UPDATE OR DELETE ON Sessions
+DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION session_time_func();
 
 CREATE OR REPLACE FUNCTION session_time_func() RETURNS TRIGGER
@@ -306,8 +308,9 @@ END;
 $$ LANGUAGE plpgsql;
 
 --checks if a customer has already registered for a course session for a particular course using credit card
-CREATE TRIGGER registration_limit_trigger
-BEFORE INSERT OR UPDATE ON Registers
+CREATE CONSTRAINT TRIGGER registration_limit_trigger
+AFTER INSERT OR UPDATE OR DELETE ON Registers
+DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION registration_limit_func();
 
 CREATE OR REPLACE FUNCTION registration_limit_func() RETURNS TRIGGER
@@ -332,62 +335,52 @@ BEGIN
 	and NEW.launch_date = launch_date
 	and NEW.sid = sid;
 
-	IF num_registration < capacity THEN
-		IF (TG_OP = 'INSERT') THEN
-			select count(*) INTO num_reg
-			from Registers
-			where NEW.cust_id = cust_id
-			and NEW.course_id = course_id
-			and NEW.launch_date = launch_date;
+	select count(*) INTO num_reg
+	from Registers
+	where NEW.cust_id = cust_id
+	and NEW.course_id = course_id
+	and NEW.launch_date = launch_date;
 
-			select count(*) INTO num_redeem
-			from Redeems
-			where NEW.cust_id = cust_id
-			and NEW.course_id = course_id
-			and NEW.launch_date = launch_date;
+	select count(*) INTO num_redeem
+	from Redeems
+	where NEW.cust_id = cust_id
+	and NEW.course_id = course_id
+	and NEW.launch_date = launch_date;
 
-			select registration_deadline INTO reg_deadline
-			from Course_offerings
-			where NEW.course_id = course_id; 
+	select registration_deadline INTO reg_deadline
+	from Course_offerings
+	where NEW.course_id = course_id; 
 
-			IF num_reg > 0 THEN
-			RAISE NOTICE 'Customer has already registered for a course session for this course offering';
-			END IF;
-
-			IF num_redeem > 0 THEN
-			RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
-			END IF;
-
-			IF NEW.reg_date > reg_deadline THEN
-			RAISE NOTICE 'The registration for this course has closed.';
-			END IF;
-
-			IF num_reg > 0 or num_redeem > 0 or NEW.reg_date > reg_deadline THEN
-				RETURN NULL;
-			ELSE
-				RETURN NEW;
-			END IF;
-
-		ELSIF (TG_OP = 'UPDATE') THEN
-			IF EXISTS (select 1 from Registers where NEW.cust_id = cust_id and NEW.course_id = course_id and NEW.launch_date = launch_date and NEW.sid = sid) OR 
-			EXISTS (select 1 from Redeems where NEW.cust_id = cust_id and NEW.course_id = course_id and NEW.launch_date = launch_date and NEW.sid = sid) THEN
-				RAISE NOTICE 'Customer has already registered/redeemed for this course session';
-				RETURN NULL;
-			ELSE
-				RETURN NEW;
-			END IF;
-		END IF;
-	ELSE
-		RAISE NOTICE 'The registration for this course session is full';
-		RETURN NULL;
+	IF num_registration = capacity THEN
+		RAISE NOTICE 'The registration for this session is full';
 	END IF;
+
+	IF num_reg > 0 THEN
+		RAISE NOTICE 'Customer has already registered for a course session for this course offering';
+	END IF;
+
+	IF num_redeem > 0 THEN
+		RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
+	END IF;
+
+	IF NEW.reg_date > reg_deadline THEN
+		RAISE NOTICE 'The registration for this course has closed';
+	END IF;
+
+	IF num_reg > 0 or num_redeem > 0 or NEW.reg_date > reg_deadline or num_registration = capacity THEN
+		RETURN NULL;
+	ELSE
+		RETURN NEW;
+	END IF;
+
 END;
 $$ LANGUAGE plpgsql;
 
 
 --checks if a customer has already registered for a course session for a particular course using course package redemption
-CREATE TRIGGER redemption_limit_trigger
-BEFORE INSERT OR UPDATE ON Redeems
+CREATE CONSTRAINT TRIGGER redemption_limit_trigger
+AFTER INSERT OR UPDATE OR DELETE ON Redeems
+DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION redemption_limit_func();
 
 CREATE OR REPLACE FUNCTION redemption_limit_func() RETURNS TRIGGER
@@ -400,73 +393,63 @@ capacity int;
 reg_deadline date;
 BEGIN
 
-	select count(*) INTO num_registration
-	from Registers
-	where NEW.course_id = course_id
-	and NEW.launch_date = launch_date
-	and NEW.sid = sid;
+select count(*) INTO num_registration
+from Registers
+where NEW.course_id = course_id
+and NEW.launch_date = launch_date
+and NEW.sid = sid;
 
-	select seating_capacity INTO capacity
-	from (Sessions natural join Rooms)
-	where NEW.course_id = course_id
-	and NEW.launch_date = launch_date
-	and NEW.sid = sid;
+select seating_capacity INTO capacity
+from (Sessions natural join Rooms)
+where NEW.course_id = course_id
+and NEW.launch_date = launch_date
+and NEW.sid = sid;
 
-	IF num_registration < capacity THEN
-		IF (TG_OP = 'INSERT') THEN
-			select count(*) INTO num_reg
-			from Registers
-			where NEW.cust_id = cust_id
-			and NEW.course_id = course_id
-			and NEW.launch_date = launch_date;
+select count(*) INTO num_reg
+from Registers
+where NEW.cust_id = cust_id
+and NEW.course_id = course_id
+and NEW.launch_date = launch_date;
 
-			select count(*) INTO num_redeem
-			from Redeems
-			where NEW.cust_id = cust_id
-			and NEW.course_id = course_id
-			and NEW.launch_date = launch_date;
+select count(*) INTO num_redeem
+from Redeems
+where NEW.cust_id = cust_id
+and NEW.course_id = course_id
+and NEW.launch_date = launch_date;
 
-			select registration_deadline INTO reg_deadline
-			from Course_offerings
-			where NEW.course_id = course_id; 
+select registration_deadline INTO reg_deadline
+from Course_offerings
+where NEW.course_id = course_id; 
 
-			IF num_reg > 0 THEN
-			RAISE NOTICE 'Customer has already registered for a course session for this course offering';
-			END IF;
+IF num_registration = capacity THEN
+	RAISE NOTICE 'The registration for this session is full';
+END IF;
 
-			IF num_redeem > 0 THEN
-			RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
-			END IF;
+IF num_reg > 0 THEN
+	RAISE NOTICE 'Customer has already registered for a course session for this course offering';
+END IF;
 
-			IF NEW.reg_date > reg_deadline THEN
-			RAISE NOTICE 'The registration for this course has closed.';
-			END IF;
+IF num_redeem > 0 THEN
+	RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
+END IF;
 
-			IF num_reg > 0 or num_redeem > 0 or NEW.reg_date > reg_deadline THEN
-				RETURN NULL;
-			ELSE
-				RETURN NEW;
-			END IF;
+IF NEW.reg_date > reg_deadline THEN
+	RAISE NOTICE 'The registration for this course has closed';
+END IF;
 
-		ELSIF (TG_OP = 'UPDATE') THEN
-			IF EXISTS (select 1 from Registers where NEW.cust_id = cust_id and NEW.course_id = course_id and NEW.launch_date = launch_date and NEW.sid = sid) OR 
-			EXISTS (select 1 from Redeems where NEW.cust_id = cust_id and NEW.course_id = course_id and NEW.launch_date = launch_date and NEW.sid = sid) THEN
-				RAISE NOTICE 'Customer has already registered/redeemed for this course session';
-				RETURN NULL;
-			ELSE
-				RETURN NEW;
-			END IF;
-		END IF;
-	ELSE
-		RAISE NOTICE 'The registration for this course session is full';
-		RETURN NULL;
-	END IF;
+IF num_reg > 0 or num_redeem > 0 or NEW.reg_date > reg_deadline or num_registration = capacity THEN
+	RETURN NULL;
+ELSE
+	RETURN NEW;
+END IF;
+
 END;
 $$ LANGUAGE plpgsql;
 
 --check if a customer has more than 1 active/partially active packages
-CREATE TRIGGER package_trigger
-BEFORE INSERT ON Buys
+CREATE CONSTRAINT TRIGGER package_trigger
+AFTER INSERT OR UPDATE ON Buys
+DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION package_func();
 
 CREATE OR REPLACE FUNCTION package_func() RETURNS TRIGGER
