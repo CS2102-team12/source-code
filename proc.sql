@@ -581,9 +581,9 @@ BEGIN
         select sid, name, session_date, start_time FROM (redeems_sessions natural join Courses)
     ), final_json AS (SELECT json_agg(
         jsonb_build_object('redeemed_course_name', name, 'redeemed_session_date', session_date, 'redeemed_start_time', start_time)
-        )
+        ) AS Information_of_redeemed_sessions
       FROM pre_json
-    ) SELECT json_agg(row_to_json(js))::jsonb INTO sessions_info FROM final_json JS;
+    ) SELECT jsonb_agg(js) into sessions_info FROM final_json JS;
 
     final := (select package_info_without_sessions || sessions_info);
     RETURN final::json;
