@@ -1080,9 +1080,9 @@ create or replace function get_available_course_packages()
 returns table(name text, num_free_registrations int, sale_end_date date, price numeric) as $$
 
 BEGIN
-    RETURN QUERY(SELECT name, num_free_registrations, sale_end_date, price
-    FROM Course_packages
-    WHERE sale_end_date >= current_date);
+    RETURN QUERY(SELECT c1.name, c1.num_free_registrations, c1.sale_end_date, c1.price
+    FROM Course_packages as c1
+    WHERE c1.sale_end_date >= current_date);
 
 END;
 $$ LANGUAGE plpgsql;
