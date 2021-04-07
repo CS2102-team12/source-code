@@ -426,7 +426,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 10
-CREATE TYPE information_session AS (session_date date, start_hour time, room_id int);
+CREATE TYPE information_session AS (session_date date, start_hour int, room_id int);
 
 CREATE OR REPLACE PROCEDURE add_course_offering(course_id_in int, launch_date_in date,
 fees numeric, deadline date, target_num int, admin_id int, VARIADIC sessions information_session[])
