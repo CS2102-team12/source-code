@@ -631,16 +631,18 @@ AS $$
 DECLARE
     current_date date := (SELECT NOW()::date);
     start_session date;
+    session_start_time time;
     refund_amt numeric := 0.00;
     course_amount numeric  := (SELECT fees FROM Course_offerings AS CO WHERE CO.course_id = course_id_in AND CO.launch_date = launch_date_in);
     package_credit int := 0;
     session_id int := 0;
 BEGIN
     SELECT session_date, sid INTO start_session, session_id
-    FROM Sessions
-    WHERE R.course_id = course_id_in AND R.launch_date = launch_date_in AND R.cust_id = cust_id_in;
+    FROM Sessions as R
+    WHERE R.course_id = course_id_in AND R.launch_date = launch_date_in;
 
     IF EXISTS(SELECT * FROM Registers AS R WHERE R.cust_id = cust_id_in AND R.course_id = course_id_in AND R.launch_date = launch_date_in) THEN
+        SELECT session_date, sid, start_time INTO start_session, session_id, session_start_time FROM (Registers NATURAL JOIN Sessions) AS R WHERE R.cust_id = cust_id_in AND R.course_id = course_id_in AND R.launch_date = launch_date_in;
         IF (start_session - current_date >= 7) THEN
             refund_amt := course_amount * 0.9;
             --remove from registers table
@@ -649,13 +651,17 @@ BEGIN
             INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id_in, session_id, course_id_in, launch_date_in);
             COMMIT;
         ELSIF (start_session - current_date >= 0 and start_session - current_date < 7) THEN
+            IF (start_session - current_date = 0 and session_start_time < CURRENT_TIME) THEN
+                RAISE EXCEPTION 'The session you are trying to cancel has ended already.';
+            END IF;
             DELETE FROM Registers AS R WHERE (R.cust_id = cust_id_in AND R.launch_date = launch_date_in AND R.course_id = course_id_in);
             INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id_in, session_id, course_id_in, launch_date_in);
             COMMIT;
-        ELSE:
+        ELSE
             RAISE EXCEPTION 'The session you are trying to cancel has ended already.';
         END IF;
     ELSIF EXISTS(SELECT * FROM Redeems AS Re WHERE Re.cust_id = cust_id_in AND Re.course_id = course_id_in AND Re.launch_date = launch_date_in) THEN
+        SELECT session_date, sid, start_time INTO start_session, session_id, session_start_time FROM (Redeems NATURAL JOIN Sessions) AS Re WHERE Re.cust_id = cust_id_in AND Re.course_id = course_id_in AND Re.launch_date = launch_date_in;
         IF (start_session - current_date >= 7) THEN
             package_credit := 1;
             --add one credit to current active package
@@ -669,12 +675,18 @@ BEGIN
             INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id_in, session_id, course_id_in, launch_date_in);
             COMMIT;
         ELSIF (start_session - current_date >= 0 and start_session - current_date < 7) THEN
+            IF (start_session - current_date = 0 and session_start_time < CURRENT_TIME) THEN
+                RAISE EXCEPTION 'The session you are trying to cancel has ended already.';
+            END IF;
+            
             DELETE FROM Redeems AS R WHERE (R.cust_id = cust_id_in AND R.launch_date = launch_date_in AND R.course_id = course_id_in);
             INSERT INTO Cancels VALUES (current_date, refund_amt, package_credit, cust_id_in, session_id, course_id_in, launch_date_in);
             COMMIT;
         ELSE
             RAISE EXCEPTION 'The session you are trying to cancel has ended already.';
         END IF;
+    ELSE 
+        RAISE EXCEPTION 'You did not register for this session!';
     END IF;
 END;
 $$ LANGUAGE plpgsql;
