@@ -307,13 +307,25 @@ RETURNS TABLE(_course_id INT, _course_title TEXT, _course_area TEXT, _offerings_
 DECLARE
 _skip BOOLEAN;
 _curr_amt INT;
+_curr_redemptions INT;
+_curr_registers INT;
 _last_amt INT;
 _course RECORD;
 _offering RECORD;
 BEGIN
     FOR _course in SELECT * FROM Courses C ORDER BY (
-        SELECT COUNT(*) FROM Registers NATURAL JOIN Course_offerings WHERE course_id = C.course_id and start_date = (
-            SELECT MAX(start_date) FROM Course_offerings WHERE course_id = C.course_id
+        (
+            SELECT COUNT(*) FROM Registers NATURAL JOIN Course_offerings WHERE course_id = C.course_id and launch_date = (
+                SELECT launch_date FROM Course_offerings WHERE course_id = C.course_id and start_date = (
+                    SELECT MAX(start_date) FROM Course_offerings WHERE course_id = C.course_id
+                )
+            )
+        ) + (
+            SELECT COUNT(*) FROM Redeems NATURAL JOIN Course_offerings WHERE course_id = C.course_id and launch_date = (
+                SELECT launch_date FROM Course_offerings WHERE course_id = C.course_id and start_date = (
+                    SELECT MAX(start_date) FROM Course_offerings WHERE course_id = C.course_id
+                )
+            )
         )
     ) DESC, course_id ASC
     LOOP
@@ -330,7 +342,9 @@ BEGIN
         FOR _offering in SELECT * FROM Course_offerings 
         WHERE course_id = _course.course_id AND date_part('year',start_date) = date_part('year',CURRENT_DATE) ORDER BY start_date
         LOOP
-            SELECT COUNT(*) INTO _curr_amt FROM Registers WHERE course_id = _course.course_id AND launch_date = _offering.launch_date;
+            SELECT COUNT(*) INTO _curr_registers FROM Registers WHERE course_id = _course.course_id AND launch_date = _offering.launch_date;
+            SELECT COUNT(*) INTO _curr_redemptions FROM Redeems WHERE course_id = _course.course_id AND launch_date = _offering.launch_date;
+            _curr_amt := _curr_redemptions + _curr_registers;
             IF _curr_amt <= _last_amt THEN
                 _skip := true;
                 EXIT;
