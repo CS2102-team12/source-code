@@ -54,17 +54,6 @@ call add_employee('Ginger', '58 Esker Place', '42492420',	'ginger@gmail.com',	'2
 call add_employee('Pepper', '39509 Veith Trail', '94024848', 'pepper9@gmail.com',	'2020-12-31', 'part_time', 100, 'Instructor', array['Human Resource']);
 call add_employee('Nessy Webber', '786 Hovde Parkway','85274156', 'cwolton8@myspace.com', date '2020-05-06', 'full_time', 5500, 'Instructor', array['Chemistry', 'Human Resource']);
                                                                                                                                         
-insert into Course_areas values ('Chemistry',	1);
-insert into Course_areas values ('Physics',	1);
-insert into Course_areas values ('Human Resource',	1);
-insert into Course_areas values ('a',3);
-insert into Course_areas values ('b', 3);
-insert into Course_areas values ('c', 3);
-insert into Course_areas values ('p',4);
-insert into Course_areas values ('q',4);
-insert into Course_areas values ('r',4);
-insert into Course_areas values ('s',3);
-
 CALL add_course_package ('A',10,'2021-01-01','2021-12-31',10922);
 CALL add_course_package ('B',11,'2021-02-01','2021-03-03',30190);
 CALL add_course_package ('C',1290,'2021-01-01','2023-12-30',10933);
