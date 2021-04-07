@@ -1505,7 +1505,7 @@ LOOP
 					start_hour := start_hour + '1 hour'::interval;
 				END LOOP;
 				--check if instructor has no available hours for this day
-				IF array_length(available_hours) > 0 THEN
+				IF array_length(available_hours,1) > 0 THEN
 					RETURN NEXT;
 				END IF;
 
