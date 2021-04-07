@@ -206,7 +206,7 @@ BEGIN
     IF _customer_id IS NULL OR _course_id IS NULL OR _launch_date IS NULL OR _session_number IS NULL OR _use_package IS NULL THEN
         RAISE EXCEPTION 'All arguments cannot be null!';
     END IF;
-    
+
     IF _session_number NOT IN (
         SELECT sid FROM Sessions as S, Course_offerings as C
         WHERE C.course_id = S.course_id AND C.launch_date = S.launch_date 
@@ -405,7 +405,7 @@ BEGIN
         WHERE date_part('year',buy_date) = _year AND date_part('month',buy_date) = _month;
 
         SELECT COALESCE(SUM(fees),0) INTO _registration_via_credit FROM (Course_offerings NATURAL JOIN Registers) CR
-        WHERE date_part('year',reg_date) = _year AND date_part('month',reg_date) = _month
+        WHERE date_part('year',reg_date) = _year AND date_part('month',reg_date) = _month;
 
         SELECT COALESCE(SUM(refund_amt),0) INTO _refunded_registration_fees FROM Cancels 
         WHERE date_part('year',cancel_date) = _year AND date_part('month',cancel_date) = _month;
