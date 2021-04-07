@@ -430,7 +430,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 10
-CREATE TYPE information_session AS (session_date date, start_hour time, room_id int);
+CREATE TYPE information_session AS (session_date date, start_hour int, room_id int);
 
 CREATE OR REPLACE PROCEDURE add_course_offering(course_id_in int, launch_date_in date,
 fees numeric, deadline date, target_num int, admin_id int, VARIADIC sessions information_session[])
@@ -703,10 +703,10 @@ DECLARE
     session_date date := (SELECT session_date FROM Sessions WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
     session_start_time time := (SELECT start_time FROM Sessions WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
 BEGIN
-    IF (session_date - current_date >= 0 AND session_start_time < (SELECT CURRENT_TIME)) THEN
+    IF (current_date <= session_date AND CURRENT_TIME < session_start_time) THEN
         UPDATE Sessions AS S
         SET eid = new_instructor_id
-        WHERE S.sid = session_id;
+        WHERE S.sid = session_id AND S.course_id = course_id_in AND S.launch_date = launch_date_in;
         COMMIT;
     ELSE
         RAISE EXCEPTION 'The session has already started, updating of instructor is not allowed.';
