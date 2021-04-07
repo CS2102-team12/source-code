@@ -52,6 +52,7 @@ call add_employee('Onion', '915 Drewry Court', '98340988', 'pink@gmail.com', '20
 call add_employee('Garlic', '6 Westerfield Pass',  '19292348', 'smells_great@gmail.com',	'2017-09-11', 'part_time', 5, 'Instructor', array['a', 'b', 'c', 'p', 'q', 'r', 's']);
 call add_employee('Ginger', '58 Esker Place', '42492420',	'ginger@gmail.com',	'2021-01-02', 'part_time', 10,'Instructor', array['p', 'q', 'r', 's']);
 call add_employee('Pepper', '39509 Veith Trail', '94024848', 'pepper9@gmail.com',	'2020-12-31', 'part_time', 100, 'Instructor', array['Human Resource']);
+call add_employee('Nessy Webber', '786 Hovde Parkway','85274156', 'cwolton8@myspace.com', date '2020-05-06', 'full_time', 5500, 'Instructor', array['Chemistry', 'Human Resource']);
                                                                                                                                         
 insert into Course_areas values ('Chemistry',	1);
 insert into Course_areas values ('Physics',	1);
@@ -124,3 +125,63 @@ select get_my_course_package(1);
 select pay_salary();
 select top_packages(1);
 select top_packages(2);
+                                                                                                                                        
+call register_session(0, 6, date '2021-04-18', 2, TRUE);
+call register_session(1, 6, date '2021-04-18', 2, TRUE);
+call register_session(2, 6, date '2021-04-18', 2, TRUE);
+call register_session(3, 6, date '2021-04-18', 2, TRUE);
+call register_session(1, 8, date '2021-03-08', 1, TRUE);
+call register_session(3, 8, date '2021-03-08', 1, TRUE);
+call register_session(4, 8, date '2021-03-08', 2, TRUE);
+call register_session(0, 9, date '2021-03-15', 3, TRUE);
+call register_session(1, 9, date '2021-03-15', 3, TRUE);
+call register_session(2, 9, date '2021-03-15', 2, TRUE);
+call register_session(3, 9, date '2021-03-15', 1, TRUE);
+call register_session(0, 2, date '2021-02-03', 1, TRUE);
+
+call register_session(4, 6, date '2021-04-18', 2, FALSE);
+call register_session(2,8, date'2021-03-08', 1,FALSE);
+call register_session(0,8, date'2021-03-08', 1,FALSE);
+call register_session(5,8, date'2021-03-08', 1,FALSE);
+call register_session(6,8, date'2021-03-08', 1,FALSE);
+call register_session(9,8, date'2021-03-08', 1,FALSE);
+call register_session(14,8, date'2021-03-08', 1,FALSE);
+call register_session(5, 6, date '2021-04-18', 2, FALSE);
+call register_session(6, 6, date '2021-04-18', 2, FALSE);
+call register_session(9, 6, date '2021-04-18', 2, FALSE);
+call register_session(14, 6, date '2021-04-18', 2, FALSE);
+call register_session(10, 9, date '2021-03-15', 3, FALSE);
+call register_session(12, 9, date '2021-03-15', 3, FALSE);
+
+call update_course_session(0, 6, date '2021-04-18', 3);
+call update_course_session(0, 8, date '2021-03-08', 2);
+
+call update_instructor(1,0, date '2020-04-05', 16);
+
+call cancel_registration(4, 6, date '2021-04-18');
+call cancel_registration(2,8, date'2021-03-08');
+call cancel_registration(0,8, date'2021-03-08');
+call cancel_registration(6,8, date'2021-03-08');
+call cancel_registration(9,8, date'2021-03-08');
+call cancel_registration(14,8, date'2021-03-08');
+call cancel_registration(5, 6, date '2021-04-18');
+call cancel_registration(6, 6, date '2021-04-18');
+call cancel_registration(9, 6, date '2021-04-18');
+call cancel_registration(14, 6, date '2021-04-18');
+call cancel_registration(10, 9, date '2021-03-15');
+call cancel_registration(12, 9, date '2021-03-15');
+
+call register_session(6,8, date'2021-03-08', 1,FALSE);
+call register_session(9,8, date'2021-03-08', 1,FALSE);
+call register_session(14,8, date'2021-03-08', 1,FALSE);
+call register_session(5, 6, date '2021-04-18', 2, FALSE);
+call register_session(6, 6, date '2021-04-18', 2, FALSE);
+call register_session(9, 6, date '2021-04-18', 2, FALSE);
+call register_session(14, 6, date '2021-04-18', 2, FALSE);
+call register_session(10, 9, date '2021-03-15', 3, FALSE);
+call register_session(12, 9, date '2021-03-15', 3, FALSE);
+call register_session(0, 6, date '2021-04-18', 2, TRUE);
+call register_session(4, 6, date '2021-04-18', 2, FALSE);
+call register_session(2,8, date'2021-03-08', 1,FALSE);
+call register_session(0,8, date'2021-03-08', 1,FALSE);
+                                                                                                                                        
