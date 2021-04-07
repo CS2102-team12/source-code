@@ -814,16 +814,17 @@ BEGIN
             hourly_rate := (select PT.hourly_rate FROM Part_time_Emp AS PT WHERE eid = current_eid);
             status := 'Part-time';
             WITH calc_hours AS (
-                SELECT (end_time - start_time) AS duration
+                SELECT DATE_PART('HOUR',(end_time - start_time)) AS duration
                 FROM Sessions
                 WHERE eid = current_eid AND (EXTRACT(MONTH FROM session_date) = current_month)
             ) SELECT sum(duration) INTO work_hours FROM calc_hours;
-
+            
             IF (work_hours IS NULL) THEN
                 work_hours := 0;
             END IF;
 
             salary_amount_paid := work_hours * hourly_rate;
+            
             salary_amount_paid := round(salary_amount_paid::numeric, 2);
             monthly_salary := NULL;
             number_of_work_days := NULL;
