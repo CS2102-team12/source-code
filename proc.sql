@@ -621,30 +621,36 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE PROCEDURE update_course_session(cust_id_in int, course_id_in int, launch_date_in date, session_id int)
 AS $$
 DECLARE
-    new_session_launch_date date;
-    new_session_course_id int;
     total_count int;
     room_id int;
     seating_limit int;
 BEGIN
-    SELECT launch_date, course_id, rid INTO new_session_launch_date, new_session_course_id, room_id
+    -- query for room of new session
+    SELECT rid INTO  room_id
     FROM Sessions
     WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in;
-    IF (new_session_course_id = session_id AND new_session_launch_date = launch_date_in) THEN
+    --select query finds a valid session
+    IF (room_id IS NOT NULL) THEN
         seating_limit := (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
-        total_count := total_count + (SELECT count(*) FROM Registers WHERE sid = session_id);
-        total_count := total_count + (SELECT count(*) FROM Redeems WHERE sid = session_id);
-        IF (total_count <= seating_limit) THEN
+        total_count := total_count + (SELECT count(*) FROM Registers WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
+        total_count := total_count + (SELECT count(*) FROM Redeems WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
+        IF (total_count <= seating_limit OR total_count IS NULL) THEN
             IF EXISTS(SELECT * FROM Registers AS R WHERE R.cust_id = cust_id_in AND R.course_id = course_id_in AND R.launch_date = launch_date_in) THEN
-                UPDATE Registers as R
-                SET R.sid = session_id
-                WHERE R.course_id = course_id_in AND R.launch_date = launch_date_in AND R.cust_id = cust_id_in;
-            ELSIF EXISTS(SELECT * FROM Redeems AS Re WHERE Re.cust_id = cust_id_in AND Re.course_id = course_id_in AND Re.launch_date = launch_date_in) THEN
-                UPDATE Redeems as Re
-                SET Re.sid = session_id
-                WHERE Re.course_id = course_id_in AND Re.launch_date = launch_date_in AND Re.cust_id = cust_id_in;
+                UPDATE Registers
+                SET sid = session_id
+                WHERE course_id = course_id_in AND launch_date = launch_date_in AND cust_id = cust_id_in;
+                RETURN;
+            ELSIF EXISTS(SELECT * FROM Redeems AS R WHERE R.cust_id = cust_id_in AND R.course_id = course_id_in AND R.launch_date = launch_date_in) THEN
+                UPDATE Redeems
+                SET sid = session_id
+                WHERE course_id = course_id_in AND launch_date = launch_date_in AND cust_id = cust_id_in;
+                RETURN;
             END IF;
+            RAISE EXCEPTION 'You did not register for any session.';
         END IF;
+        RAISE EXCEPTION 'The session is full.';
+    ELSE
+        RAISE EXCEPTION 'The session input is not a valid session.';
     END IF;
     COMMIT;
 END;
