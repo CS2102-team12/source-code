@@ -168,6 +168,7 @@ RETURNS TABLE(_course_title TEXT, _course_area TEXT, _start_date DATE, _end_date
               _course_fees NUMERIC, _num_remaining_seats INT) AS $$
 DECLARE
     _number_registrations INT;
+    _number_redemptions INT;
     _row RECORD;
 BEGIN
     for _row in select course_id, launch_date, title, name, start_date, end_date, registration_deadline, fees, seating_capacity
@@ -177,6 +178,8 @@ BEGIN
     LOOP
         SELECT COUNT(*) INTO _number_registrations FROM Registers 
         WHERE course_id = _row.course_id and launch_date = _row.launch_date;
+        SELECT COUNT(*) INTO _number_redemptions FROM Redeems
+        WHERE course_id = _row.course_id and launch_date = _row.launch_date;
         IF _number_registrations < _row.seating_capacity 
         THEN
             _course_title := _row.title;
@@ -185,7 +188,7 @@ BEGIN
             _end_date := _row.end_date;
             _deadline := _row.registration_deadline;
             _course_fees := _row.fees;
-            _num_remaining_seats := _row.seating_capacity - _number_registrations;
+            _num_remaining_seats := _row.seating_capacity - _number_registrations - _number_redemptions;
             RETURN NEXT;
         END IF;
     END LOOP;
@@ -218,6 +221,9 @@ BEGIN
     IF (
         SELECT COUNT(*) FROM Registers 
         WHERE course_id = _course_id and launch_date = _launch_date AND sid = _session_number
+    ) + (
+        SELECT COUNT(*) FROM Redeems
+        WHERE course_id = _course_id and launch_date = _launch_date AND sid = _session_number
     ) >= (
         SELECT seating_capacity FROM Rooms NATURAL JOIN Sessions 
         WHERE course_id = _course_id and launch_date = _launch_date AND sid = _session_number
@@ -225,7 +231,8 @@ BEGIN
         RAISE EXCEPTION 'The session is full!';
     END IF;        
 
-    IF EXISTS (SELECT 1 FROM Registers WHERE cust_id = _customer_id AND course_id = _course_id AND launch_date = _launch_date ) THEN
+    IF EXISTS (SELECT 1 FROM Registers WHERE cust_id = _customer_id AND course_id = _course_id AND launch_date = _launch_date ) 
+    OR EXISTS (SELECT 1 FROM Redeems WHERE cust_id = _customer_id AND course_id = _course_id AND launch_date = _launch_date ) THEN
         RAISE EXCEPTION 'The customer has already registered for the course offering before!';
     END IF;
     
@@ -237,8 +244,6 @@ BEGIN
         WHERE cust_id = _customer_id AND num_remaining_redemptions > 0;
         INSERT INTO Redeems 
         VALUES (CURRENT_DATE, _buy_date, _package_id, _card_number, _customer_id, _session_number, _course_id, _launch_date);
-        INSERT INTO Registers 
-        VALUES (CURRENT_DATE, _card_number, _customer_id, _session_number, _course_id, _launch_date);
         UPDATE Buys
         SET num_remaining_redemptions = num_remaining_redemptions - 1
         WHERE cust_id = _customer_id AND num_remaining_redemptions > 0;
@@ -283,6 +288,8 @@ BEGIN
         (SELECT seating_capacity FROM Rooms WHERE rid = _new_room_id) 
         < 
         (SELECT COUNT(*) FROM Registers WHERE course_id = _course_id and launch_date = _launch_date AND sid = _session_number)
+        +
+        (SELECT COUNT(*) FROM Redeems WHERE course_id = _course_id and launch_date = _launch_date AND sid = _session_number)
     ) THEN
         RAISE EXCEPTION 'The pairing of the room to the session is not valid!';
     END IF;
@@ -375,10 +382,7 @@ BEGIN
         WHERE date_part('year',buy_date) = _year AND date_part('month',buy_date) = _month;
 
         SELECT COALESCE(SUM(fees),0) INTO _registration_via_credit FROM (Course_offerings NATURAL JOIN Registers) CR
-        WHERE date_part('year',reg_date) = _year AND date_part('month',reg_date) = _month AND NOT EXISTS (
-            SELECT 1 FROM Redeems WHERE redeem_date = CR.reg_date AND card_number = CR.card_number 
-            AND cust_id = CR.cust_id AND sid = CR.sid AND course_id = CR.course_id AND launch_date = CR.launch_date 
-        );
+        WHERE date_part('year',reg_date) = _year AND date_part('month',reg_date) = _month
 
         SELECT COALESCE(SUM(refund_amt),0) INTO _refunded_registration_fees FROM Cancels 
         WHERE date_part('year',cancel_date) = _year AND date_part('month',cancel_date) = _month;

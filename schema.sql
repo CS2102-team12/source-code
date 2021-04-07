@@ -349,7 +349,8 @@ BEGIN
 
 	select registration_deadline INTO reg_deadline
 	from Course_offerings
-	where NEW.course_id = course_id; 
+	where NEW.course_id = course_id
+    AND NEW.launch_date = launch_date; 
 
 	IF num_registration = capacity THEN
 		RAISE NOTICE 'The registration for this session is full';
@@ -419,7 +420,8 @@ and NEW.launch_date = launch_date;
 
 select registration_deadline INTO reg_deadline
 from Course_offerings
-where NEW.course_id = course_id; 
+where NEW.course_id = course_id
+AND NEW.launch_date = launch_date; 
 
 IF num_registration = capacity THEN
 	RAISE NOTICE 'The registration for this session is full';
