@@ -1187,6 +1187,7 @@ DECLARE
     session_start_date date;
     num_sessions int;
     current_sid int;
+    loop_counter int;
 
 BEGIN
     SELECT count(*) INTO num_registrations FROM Registers
@@ -1226,10 +1227,18 @@ BEGIN
     DELETE FROM Sessions
     WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
 
-    UPDATE Sessions
-    SET sid = sid - 1
-    WHERE course_id = cid AND launch_date = l_date
-    AND sid > session_id;
+    loop_counter := session_id + 1;
+
+    LOOP
+        EXIT WHEN loop_counter >= num_sessions + 1;
+
+        UPDATE Sessions
+        SET sid = sid - 1
+        WHERE sid = loop_counter
+        AND launch_date = l_date AND course_id = cid;
+
+        loop_counter := loop_counter + 1;
+    END LOOP;
 
     COMMIT;
 
@@ -1247,6 +1256,7 @@ DECLARE
     count_eid int;
     num_sessions int;
     inconsistent_id_and_date int;
+    loop_counter int;
 
 BEGIN 
     /* find registration deadline. */
@@ -1313,17 +1323,24 @@ BEGIN
     
     END IF;
 
+    /* increment sid of sessions after the inserted session. */
+    loop_counter := num_sessions;
+    LOOP
+        EXIT WHEN loop_counter = new_session_id - 1;
+
+        UPDATE Sessions
+        SET sid = sid + 1
+        WHERE sid = loop_counter
+        AND launch_date = l_date AND course_id = cid;
+
+        loop_counter := loop_counter - 1;
+    END LOOP;
+
     /* Insert new session. */
     INSERT INTO Sessions
     VALUES (new_session_id, new_session_day, new_session_start_hour,
     new_session_start_hour + make_interval(hours := session_duration), 
     room_id, instructor_id, l_date, cid);
-
-    /* increment sid of sessions after the inserted session. */
-    UPDATE Sessions
-    SET sid = sid + 1
-    WHERE launch_date = l_date AND course_id = cid
-    AND sid >= new_session_id;
 
     COMMIT;
 
