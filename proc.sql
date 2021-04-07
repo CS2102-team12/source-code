@@ -1173,25 +1173,27 @@ BEGIN
 
     IF session_id = 1 THEN
         UPDATE Course_offerings
-        SET start_date = (SELECT date FROM Sessions WHERE sid = 2 
+        SET start_date = (SELECT session_date FROM Sessions WHERE sid = 2 
         AND course_id = cid AND launch_date = l_date)
         WHERE course_id = cid AND launch_date = l_date;
     
     ELSEIF session_id = num_sessions THEN
         UPDATE Course_offerings
-        SET end_date = (SELECT date FROM Sessions WHERE sid = num_sessions - 1
+        SET end_date = (SELECT session_date FROM Sessions WHERE sid = num_sessions - 1
         AND course_id = cid AND launch_date = l_date)
         WHERE course_id = cid AND launch_date = l_date;
     
     END IF;
+
+    DELETE FROM Sessions
+    WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
 
     UPDATE Sessions
     SET sid = sid - 1
     WHERE course_id = cid AND launch_date = l_date
     AND sid > session_id;
 
-    DELETE FROM Sessions
-    WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
+    COMMIT;
 
 END;
 $$ LANGUAGE plpgsql;
@@ -1202,9 +1204,9 @@ in new_session_day date, in new_session_start_hour time, in instructor_id int, i
 
 DECLARE
     deadline date;
+    session_duration int;
     count_rid int;
     count_eid int;
-    session_duration int;
     num_sessions int;
     inconsistent_id_and_date int;
 
@@ -1213,20 +1215,20 @@ BEGIN
     SELECT registration_deadline INTO deadline 
     FROM Course_offerings WHERE launch_date = l_date AND course_id = cid;
 
-    /* Count number of rooms that are available. */
-    SELECT count(rid) into count_rid
-    FROM find_rooms(new_session_day, new_session_start_hour, new_session_duration)
-    WHERE rid = room_id;
-
-    /* Count number of instructors that are available. */
-    SELECT count(eid) into count_eid
-    FROM find_instructors(cid, new_session_day, new_session_start_hour)
-    WHERE eid = instructor_id;
-
     /* Find duration of the course session for end_time. */
     SELECT duration INTO session_duration
     FROM Courses
     WHERE course_id = cid;
+
+    /* Count number of rooms that are available. */
+    SELECT count(rid) into count_rid
+    FROM find_rooms(new_session_day, new_session_start_hour, make_interval(hours := session_duration))
+    WHERE rid = room_id;
+
+    /* Count number of instructors that are available. */
+    SELECT count(eid) into count_eid
+    FROM find_instructors(cid, new_session_day, cast(extract(hour from new_session_start_hour) as integer))
+    WHERE eid = instructor_id;
 
     /* Find current number of sessions for the course offering. */
     SELECT count(distinct sid) INTO num_sessions
@@ -1239,9 +1241,9 @@ BEGIN
     FROM Sessions
     WHERE launch_date = l_date AND course_id = cid
     AND ((sid < new_session_id AND 
-    (date > new_session_day OR (date = new_session_day AND start_time > new_session_start_hour)))
+    (session_date > new_session_day OR (session_date = new_session_day AND start_time > new_session_start_hour)))
     OR (sid >= new_session_id AND 
-    (date < new_session_day OR (date = new_session_day AND start_time < new_session_start_hour))));
+    (session_date < new_session_day OR (session_date = new_session_day AND start_time < new_session_start_hour))));
 
     if deadline < current_date then
         raise exception 'Course offering deadline has passed.';
@@ -1273,17 +1275,19 @@ BEGIN
     
     END IF;
 
+    /* Insert new session. */
+    INSERT INTO Sessions
+    VALUES (new_session_id, new_session_day, new_session_start_hour,
+    new_session_start_hour + make_interval(hours := session_duration), 
+    room_id, instructor_id, l_date, cid);
+
     /* increment sid of sessions after the inserted session. */
     UPDATE Sessions
     SET sid = sid + 1
     WHERE launch_date = l_date AND course_id = cid
     AND sid >= new_session_id;
 
-    /* Insert new session. */
-    INSERT INTO Sessions
-    VALUES (new_sid, new_session_day, new_session_start_hour,
-    new_session_start_hour + make_interval(hours := session_duration), 
-    room_id, instructor_id, l_date, cid);
+    COMMIT;
 
 END;
 $$ LANGUAGE plpgsql;
