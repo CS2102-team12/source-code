@@ -180,7 +180,7 @@ BEGIN
         WHERE course_id = _row.course_id and launch_date = _row.launch_date;
         SELECT COUNT(*) INTO _number_redemptions FROM Redeems
         WHERE course_id = _row.course_id and launch_date = _row.launch_date;
-        IF _number_registrations < _row.seating_capacity 
+        IF _number_registrations + _number_redemptions < _row.seating_capacity 
         THEN
             _course_title := _row.title;
             _course_area := _row.name;
@@ -206,12 +206,21 @@ BEGIN
     IF _customer_id IS NULL OR _course_id IS NULL OR _launch_date IS NULL OR _session_number IS NULL OR _use_package IS NULL THEN
         RAISE EXCEPTION 'All arguments cannot be null!';
     END IF;
+    
+    IF _session_number NOT IN (
+        SELECT sid FROM Sessions as S, Course_offerings as C
+        WHERE C.course_id = S.course_id AND C.launch_date = S.launch_date 
+        AND C.launch_date = _launch_date AND C.course_id = _course_id
+    ) THEN 
+		RAISE EXCEPTION 'The session is invalid!';
+	END IF;
+
     IF _session_number NOT IN (
         SELECT sid FROM Sessions as S, Course_offerings as C
         WHERE C.course_id = S.course_id AND C.launch_date = S.launch_date 
         AND C.launch_date = _launch_date AND C.course_id = _course_id AND C.registration_deadline > CURRENT_DATE
     ) THEN 
-		RAISE EXCEPTION 'The session is invalid!';
+		RAISE EXCEPTION 'The registration has closed!';
 	END IF;
     
     IF _customer_id NOT IN (SELECT cust_id FROM Customers) THEN
