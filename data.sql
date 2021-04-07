@@ -19,8 +19,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-call add_course_in_bulk();
-
 CALL add_customer ('Sapphira Swinley','1526 Jenna Park','124-648-8011','sswinley0@ehow.com',337941961691093,'2022-11-30',568);
 CALL add_customer ('Hans Riddiough','35192 Atwood Circle','708-920-4203','hriddiough1@loc.gov',337941239704397,'2022-05-14',613);
 CALL add_customer ('Willabella Christescu','2900 Sauthoff Trail','263-218-2174','wchristescu2@admin.ch',375673994596261,'2022-11-11',429);
@@ -53,7 +51,9 @@ call add_employee('Garlic', '6 Westerfield Pass',  '19292348', 'smells_great@gma
 call add_employee('Ginger', '58 Esker Place', '42492420',	'ginger@gmail.com',	'2021-01-02', 'part_time', 10,'Instructor', array['p', 'q', 'r', 's']);
 call add_employee('Pepper', '39509 Veith Trail', '94024848', 'pepper9@gmail.com',	'2020-12-31', 'part_time', 100, 'Instructor', array['Human Resource']);
 call add_employee('Nessy Webber', '786 Hovde Parkway','85274156', 'cwolton8@myspace.com', date '2020-05-06', 'full_time', 5500, 'Instructor', array['Chemistry', 'Human Resource']);
-                                                                                                                                        
+
+call add_course_in_bulk();                                                                                                                                                    
+                                                                                                                                                    
 CALL add_course_package ('A',10,'2021-01-01','2021-12-31',10922);
 CALL add_course_package ('B',11,'2021-02-01','2021-03-03',30190);
 CALL add_course_package ('C',1290,'2021-01-01','2023-12-30',10933);
