@@ -807,7 +807,6 @@ $$ LANGUAGE plpgsql;
 
 --26
 
---modify get_available_course_offerings_slightly
 CREATE OR REPLACE FUNCTION get_available_course_offerings_with_id_and_launch_date()
 RETURNS TABLE(_course_id INT, _launch_date DATE, _course_title TEXT, _course_area TEXT, _deadline DATE,
               _course_fees NUMERIC) AS $$
@@ -824,12 +823,12 @@ BEGIN
         WHERE course_id = _row.course_id and launch_date = _row.launch_date;
         IF _number_registrations < _row.seating_capacity
         THEN
-            _course_id := _row.id;
+            _course_id := _row.course_id;
             _launch_date := _row.launch_date;
             _course_title := _row.title;
             _course_area := _row.name;
             _deadline := _row.registration_deadline;
-            _course_fees := _row._course_fees;
+            _course_fees := _row.fees;
             RETURN NEXT;
         END IF;
     END LOOP;
@@ -856,12 +855,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION promote_courses()
-RETURNS TABLE (customer_id int, customer_name text, course_area_A text,
+RETURNS TABLE (customer_id_out int, customer_name_out text, course_area_A text,
 course_identifier_C int, course_title_C text, launch_date_offering_C date,
-course_offering_deadline date, fees_course_offering date) AS $$
+course_offering_deadline date, fees_course_offering numeric) AS $$
 DECLARE
     curs CURSOR FOR (SELECT cust_id, name FROM Customers ORDER BY cust_id);
-    all_offering_curs CURSOR FOR (SELECT get_available_course_offerings_with_id_and_launch_date());
+    all_offering_curs CURSOR FOR (SELECT _course_id, _launch_date, _course_title, _course_area, _deadline,
+              _course_fees FROM get_available_course_offerings_with_id_and_launch_date());
     r RECORD;
     courses_record RECORD;
     last_purchase RECORD;
@@ -869,14 +869,15 @@ DECLARE
     customer_name text;
     customer_id int;
     _rows RECORD;
+    current_customer_name text;
+    current_customer_id int;
 BEGIN
     OPEN curs;
     LOOP
         FETCH curs INTO r;
         EXIT WHEN NOT FOUND;
-        customer_name := r.name;
-        customer_id := r.id;
-
+        current_customer_name := r.name;
+        current_customer_id := r.cust_id;
         -- get last register/redeem session
         WITH merge_registers_redeems AS (
         SELECT cust_id, reg_date AS sign_up_date FROM Registers
@@ -889,29 +890,33 @@ BEGIN
             LOOP
                 FETCH all_offering_curs INTO courses_record;
                 EXIT WHEN NOT FOUND;
-                course_area_A := all_offering_curs._course_area;
-                course_identifier_C := all_offering_curs._course_id;
-                course_title_C := all_offering_curs._course_title;
-                launch_date_offering_C := all_offering_curs._launch_date;
-                course_offering_deadline := all_offering_curs._deadline;
-                fees_course_offering := all_offering_curs._course_fees;
+                customer_name_out := current_customer_name;
+                customer_id_out := current_customer_id;
+                course_area_A := courses_record._course_area;
+                course_identifier_C := courses_record._course_id;
+                course_title_C := courses_record._course_title;
+                launch_date_offering_C := courses_record._launch_date;
+                course_offering_deadline := courses_record._deadline;
+                fees_course_offering := courses_record._course_fees;
                 RETURN NEXT;
             END LOOP;
             CLOSE all_offering_curs;
-        ELSIF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_purchase.redeem_date::date)) * 12 +
-            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_purchase.redeem_date::date)) >= 6) THEN
+        ELSIF ((DATE_PART('YEAR', NOW()::date) - DATE_PART('YEAR', last_register)) * 12 +
+            (DATE_PART('MONTH', NOW()::date) - DATE_PART('MONTH', last_register)) >= 6) THEN
 
             --if less than 6 months and registered for a course before, find areas of last 3 sign-ups
-            
+
             for _rows in select *
             FROM get_available_course_offerings_with_id_and_launch_date() NATURAL JOIN get_last_three_areas(customer_id) AS Z
-            LOOP 
-                course_identifier_C := _row.id;
-                launch_date_offering_C := _row.launch_date;
-                course_title_C := _row.title;
-                course_area_A := _row.name;
-                course_offering_deadline := _row.registration_deadline;
-                fees_course_offering := _row._course_fees;
+            LOOP
+                customer_name_out := current_customer_name;
+                customer_id_out := current_customer_id;
+                course_identifier_C := _rows._course_id;
+                launch_date_offering_C := _rows._launch_date;
+                course_title_C := _rows._course_title;
+                course_area_A := _rows._course_area;
+                course_offering_deadline := _rows._deadline;
+                fees_course_offering := _rows._course_fees;
                 RETURN NEXT;
             END LOOP;
         END IF;
