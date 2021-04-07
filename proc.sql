@@ -621,30 +621,36 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE PROCEDURE update_course_session(cust_id_in int, course_id_in int, launch_date_in date, session_id int)
 AS $$
 DECLARE
-    new_session_launch_date date;
-    new_session_course_id int;
     total_count int;
     room_id int;
     seating_limit int;
 BEGIN
-    SELECT launch_date, course_id, rid INTO new_session_launch_date, new_session_course_id, room_id
+    -- query for room of new session
+    SELECT rid INTO  room_id
     FROM Sessions
     WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in;
-    IF (new_session_course_id = session_id AND new_session_launch_date = launch_date_in) THEN
+    --select query finds a valid session
+    IF (room_id IS NOT NULL) THEN
         seating_limit := (SELECT seating_capacity FROM Rooms WHERE rid = room_id);
-        total_count := total_count + (SELECT count(*) FROM Registers WHERE sid = session_id);
-        total_count := total_count + (SELECT count(*) FROM Redeems WHERE sid = session_id);
-        IF (total_count <= seating_limit) THEN
+        total_count := total_count + (SELECT count(*) FROM Registers WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
+        total_count := total_count + (SELECT count(*) FROM Redeems WHERE sid = session_id AND course_id = course_id_in AND launch_date = launch_date_in);
+        IF (total_count <= seating_limit OR total_count IS NULL) THEN
             IF EXISTS(SELECT * FROM Registers AS R WHERE R.cust_id = cust_id_in AND R.course_id = course_id_in AND R.launch_date = launch_date_in) THEN
-                UPDATE Registers as R
-                SET R.sid = session_id
-                WHERE R.course_id = course_id_in AND R.launch_date = launch_date_in AND R.cust_id = cust_id_in;
-            ELSIF EXISTS(SELECT * FROM Redeems AS Re WHERE Re.cust_id = cust_id_in AND Re.course_id = course_id_in AND Re.launch_date = launch_date_in) THEN
-                UPDATE Redeems as Re
-                SET Re.sid = session_id
-                WHERE Re.course_id = course_id_in AND Re.launch_date = launch_date_in AND Re.cust_id = cust_id_in;
+                UPDATE Registers
+                SET sid = session_id
+                WHERE course_id = course_id_in AND launch_date = launch_date_in AND cust_id = cust_id_in;
+                RETURN;
+            ELSIF EXISTS(SELECT * FROM Redeems AS R WHERE R.cust_id = cust_id_in AND R.course_id = course_id_in AND R.launch_date = launch_date_in) THEN
+                UPDATE Redeems
+                SET sid = session_id
+                WHERE course_id = course_id_in AND launch_date = launch_date_in AND cust_id = cust_id_in;
+                RETURN;
             END IF;
+            RAISE EXCEPTION 'You did not register for any session.';
         END IF;
+        RAISE EXCEPTION 'The session is full.';
+    ELSE
+        RAISE EXCEPTION 'The session input is not a valid session.';
     END IF;
     COMMIT;
 END;
@@ -808,16 +814,17 @@ BEGIN
             hourly_rate := (select PT.hourly_rate FROM Part_time_Emp AS PT WHERE eid = current_eid);
             status := 'Part-time';
             WITH calc_hours AS (
-                SELECT (end_time - start_time) AS duration
+                SELECT DATE_PART('HOUR',(end_time - start_time)) AS duration
                 FROM Sessions
                 WHERE eid = current_eid AND (EXTRACT(MONTH FROM session_date) = current_month)
             ) SELECT sum(duration) INTO work_hours FROM calc_hours;
-
+            
             IF (work_hours IS NULL) THEN
                 work_hours := 0;
             END IF;
 
             salary_amount_paid := work_hours * hourly_rate;
+            
             salary_amount_paid := round(salary_amount_paid::numeric, 2);
             monthly_salary := NULL;
             number_of_work_days := NULL;
@@ -1181,6 +1188,7 @@ DECLARE
     session_start_date date;
     num_sessions int;
     current_sid int;
+    loop_counter int;
 
 BEGIN
     SELECT count(*) INTO num_registrations FROM Registers
@@ -1220,10 +1228,18 @@ BEGIN
     DELETE FROM Sessions
     WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
 
-    UPDATE Sessions
-    SET sid = sid - 1
-    WHERE course_id = cid AND launch_date = l_date
-    AND sid > session_id;
+    loop_counter := session_id + 1;
+
+    LOOP
+        EXIT WHEN loop_counter >= num_sessions + 1;
+
+        UPDATE Sessions
+        SET sid = sid - 1
+        WHERE sid = loop_counter
+        AND launch_date = l_date AND course_id = cid;
+
+        loop_counter := loop_counter + 1;
+    END LOOP;
 
     COMMIT;
 
@@ -1241,6 +1257,7 @@ DECLARE
     count_eid int;
     num_sessions int;
     inconsistent_id_and_date int;
+    loop_counter int;
 
 BEGIN 
     /* find registration deadline. */
@@ -1307,17 +1324,24 @@ BEGIN
     
     END IF;
 
+    /* increment sid of sessions after the inserted session. */
+    loop_counter := num_sessions;
+    LOOP
+        EXIT WHEN loop_counter = new_session_id - 1;
+
+        UPDATE Sessions
+        SET sid = sid + 1
+        WHERE sid = loop_counter
+        AND launch_date = l_date AND course_id = cid;
+
+        loop_counter := loop_counter - 1;
+    END LOOP;
+
     /* Insert new session. */
     INSERT INTO Sessions
     VALUES (new_session_id, new_session_day, new_session_start_hour,
     new_session_start_hour + make_interval(hours := session_duration), 
     room_id, instructor_id, l_date, cid);
-
-    /* increment sid of sessions after the inserted session. */
-    UPDATE Sessions
-    SET sid = sid + 1
-    WHERE launch_date = l_date AND course_id = cid
-    AND sid >= new_session_id;
 
     COMMIT;
 
@@ -1383,99 +1407,115 @@ CREATE OR REPLACE FUNCTION get_available_instructors(cid int, start_date date, e
 RETURNS TABLE(eid int, name text, num_hours int, day date, available_hours time []) AS $$
 DECLARE
 	curs CURSOR FOR (
-	select A.eid, A.name
-	from (Specializes natural join Courses natural join Instructors natural join Employees) A
-	where course_id = cid
+	select E.eid, E.name
+	from (Specializes natural join Courses natural join Instructors) A, Employees E
+	where A.eid = E.eid
+	and course_id = cid
 	and depart_date IS NULL
 	order by eid asc);
 	r RECORD;
 	start_day date;
 	start_hour time;
+	end_hour time;
 	session_duration int;
 
 BEGIN
 
-	select duration INTO session_duration
-	from Courses
-	where course_id = cid;
+select duration INTO session_duration
+from Courses
+where course_id = cid;
 
-	OPEN curs;
-	LOOP
-		FETCH curs INTO r;
-		EXIT WHEN NOT FOUND;
-				
-		select sum(end_time - start_time) into num_hours
-		from Sessions S1
-		where S1.eid = r.eid
-		and extract(month from S1.session_date) = extract(month from start_date)
-		and extract(year from S1.session_date) = extract(year from start_date);
+OPEN curs;
+LOOP
+	FETCH curs INTO r;
+	EXIT WHEN NOT FOUND;
+			
+	select sum(DATE_PART('hour',end_time - start_time)) into num_hours
+	from Sessions S1
+	where S1.eid = r.eid
+	and extract(month from S1.session_date) = extract(month from start_date)
+	and extract(year from S1.session_date) = extract(year from start_date);
 
-		IF EXISTS (select 1 from Part_time_Instructors where eid = r.eid) and num_hours + duration > 30 THEN
-			CONTINUE;
-		
-		ELSE
-			eid := r.eid;
-			name := r.name;
-			start_day := start_date;
-		
-			while start_day <= end_date
-			LOOP
+	--check if instructor is part-time and will exceed 30 hrs
+	IF EXISTS (select 1 from Part_time_Instructors P where P.eid = r.eid) and num_hours + session_duration > 30 THEN
+		CONTINUE;	
+	ELSE
+		eid := r.eid;
+		name := r.name;
+		start_day := start_date;
+	
+		while start_day <= end_date
+		LOOP
 
-				IF extract(dow from start_day) = 6 THEN
-					start_day := start_day + '2 days'::interval;
-					CONTINUE;
-				END IF;
+			IF extract(dow from start_day) = 6 THEN
+				start_day := start_day + '2 days'::interval;
+				CONTINUE;
+			ELSIF extract(dow from start_day) = 0 THEN
+				start_day := start_day + '1 day'::interval;
+				CONTINUE;
+			END IF;
 
-				IF extract(dow from start_day) = 0 THEN
-					start_day := start_day + '1 day'::interval;
-					CONTINUE;
-				END IF;
+			day := start_day;
 
-				day := start_day;
+			--check if instructor has any session on this day
+			IF NOT EXISTS (select 1 
+				from Sessions S1 
+				where S1.eid = r.eid 
+				and S1.course_id = cid 
+				and S1.session_date = start_day) THEN
+				start_hour := '0900';
+				end_hour := start_hour + make_interval(hours := session_duration);
+				while start_hour + make_interval(hours := session_duration) <= '1800'
+				LOOP
+					end_hour := start_hour + make_interval(hours := session_duration);
+					IF start_hour = '1200' THEN
+						start_hour = '1400';
+						CONTINUE;
+					ELSIF end_hour <= '1200' or start_hour >= '1400' THEN
+						available_hours := array_append(available_hours, start_hour);
+					END IF;
+					start_hour := start_hour + '1 hour'::interval;
+				END LOOP;
+				RETURN NEXT;
+			ELSE
+				start_hour := '0900';
+				available_hours := array[]::time[];
 
-				IF NOT EXISTS (select 1 
-					from Sessions S1 
-					where S1.eid = r.eid 
-					and S1.course_id = cid 
-					and S1.session_date = start_day) THEN
-						available_hours := array ['0900', '1000', '1100', '1200', '1300', '1400', '1500', '1600', '1700'];
-						RETURN NEXT;
-				ELSE
-					start_hour := '0900';
-					available_hours := array[];
-
-					while start_hour < '1800'
-					LOOP
-
+				while start_hour + make_interval(hours := session_duration) <= '1800'
+				LOOP
+					end_hour := start_hour + make_interval(hours := session_duration);
+					IF start_hour = '1200' THEN
+						start_hour = '1400';
+						CONTINUE;
+					ELSIF end_hour <= '1200' or start_hour >= '1400' THEN 
+						--check if instructor has another session clashing with this hour
 						IF NOT EXISTS (select 1 
 							from Sessions S1 
-							where S1.eid = r.eid 
+							where S1.eid = r.eid
 							and S1.course_id = cid  
-							and S1.session_date = r.session_date 
-							and (start_hour >= r.start_time and start_hour <= r.end_time)
-							or DATE_PART('hour', r.start_time - start_hour) < 1
-							or DATE_PART('hour', start_hour - r.end_time) < 1) THEN
+							and S1.session_date = start_day 
+							and (start_hour >= start_time and start_hour <= end_time)
+							or (end_hour >= start_time and end_hour <= end_time)
+							or (start_hour < start_time and end_hour > end_time)
+							or DATE_PART('hour', start_time - end_hour) < 1
+							or DATE_PART('hour', start_hour - end_time) < 1) THEN
 								available_hours := array_append(available_hours, start_hour);
 						END IF;
-
-						IF start_hour = '1100' THEN
-							start_hour := start_hour + '3 hour'::interval;
-						ELSE
-							start_hour := start_hour + '1 hour'::interval;
-						END IF;
-
-					END LOOP;
-
+					END IF;
+					start_hour := start_hour + '1 hour'::interval;
+				END LOOP;
+				--check if instructor has no available hours for this day
+				IF array_length(available_hours) > 0 THEN
 					RETURN NEXT;
-
 				END IF;
 
-				start_day := start_day + '1 day'::interval;
+			END IF;
 
-			END LOOP;
-		END IF;
-	END LOOP;
-	CLOSE curs;
+			start_day := start_day + '1 day'::interval;
+
+		END LOOP;
+	END IF;
+END LOOP;
+CLOSE curs;
 END;
 $$ LANGUAGE plpgsql;
-                                                                             
