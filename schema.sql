@@ -197,15 +197,16 @@ foreign key(buy_date,package_id,card_number,cust_id) references Buys,
 primary key(redeem_date,sid,course_id,launch_date,buy_date,package_id,card_number,cust_id)
 );
 
+drop function session_inst_func() cascade;
 
 --checks if the instructor specialises in the area of the session he is assigned to
 --checks if the instructor is teaching 2 consecutive sessions
-CREATE CONSTRAINT TRIGGER session_inst_trigger
-AFTER INSERT OR UPDATE OR DELETE ON Sessions
+CREATE TRIGGER session_inst_insert_trigger
+BEFORE INSERT ON Sessions
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION session_inst_func();
+FOR EACH ROW EXECUTE FUNCTION session_inst_insert_func();
 
-CREATE OR REPLACE FUNCTION session_inst_func() RETURNS TRIGGER
+CREATE OR REPLACE FUNCTION session_inst_insert_func() RETURNS TRIGGER
 AS $$
 DECLARE
 inst_spec int;
@@ -263,16 +264,77 @@ END IF;
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE TRIGGER session_inst_update_trigger
+AFTER UPDATE ON Sessions
+FOR EACH ROW EXECUTE FUNCTION session_inst_update_func();
 
+CREATE OR REPLACE FUNCTION session_inst_update_func() RETURNS TRIGGER
+AS $$
+DECLARE
+inst_spec int;
+inst_time int;
+part_time_inst_hrs int;
+courseArea text;
+session_duration int;
+
+BEGIN
+
+select name INTO courseArea 
+from Courses
+where NEW.course_id = course_id;
+
+select count(*) INTO inst_spec
+from Specializes
+where NEW.eid = eid
+and courseArea = name;
+
+select count(*) INTO inst_time
+from Sessions
+where NEW.eid = eid
+and NEW.session_date = session_date
+and (ABS(DATE_PART('hour', NEW.start_time-end_time)) < 1
+or ABS(DATE_PART('hour', start_time-NEW.end_time)) < 1);
+
+select sum(DATE_PART('hour',end_time-start_time)) into part_time_inst_hrs
+from Part_time_Instructors natural join Sessions 
+where eid = NEW.eid
+and extract(month from session_date) = extract(month from NEW.session_date)
+and extract(year from session_date) = extract(year from NEW.session_date);
+
+select duration INTO session_duration
+from Courses
+where course_id = NEW.course_id;
+
+IF inst_spec = 0 THEN
+RAISE NOTICE 'Instructor does not specialize in this course';
+END IF;
+
+IF inst_time > 1 THEN
+RAISE NOTICE 'Instructor not allowed to teach consecutive courses';
+END IF;
+
+IF part_time_inst_hrs + session_duration > 30 THEN
+RAISE NOTICE 'Part-time instructor not allowed to teach more than 30 hrs per month';
+END IF;
+
+IF inst_spec = 0 or inst_time > 0 or part_time_inst_hrs + session_duration > 30 THEN
+RETURN NULL;
+ELSE
+RETURN NEW;
+END IF;
+
+END;
+$$ LANGUAGE plpgsql;
+
+drop function session_time_func() cascade;
 --checks if the session to be inserted clashes with another session of the same course offering
 --checks if the room to be inserted is being used by other sessions
 --checks if the instructor assigned has other sessions at the same time
-CREATE CONSTRAINT TRIGGER session_time_trigger
-AFTER INSERT OR UPDATE OR DELETE ON Sessions
-DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION session_time_func();
+CREATE TRIGGER session_time_insert_trigger
+BEFORE INSERT ON Sessions
+FOR EACH ROW EXECUTE FUNCTION session_time_insert_func();
 
-CREATE OR REPLACE FUNCTION session_time_func() RETURNS TRIGGER
+CREATE OR REPLACE FUNCTION session_time_insert_func() RETURNS TRIGGER
 AS $$
 DECLARE
 same_session_time int;
@@ -298,8 +360,49 @@ or NEW.eid = eid)
 );
 
 IF same_session_time > 0 THEN
-RAISE NOTICE 'This session is in conflict with other sessions';
+RAISE NOTICE 'INSERTION ERROR: This session is in conflict with other sessions';
 RETURN NULL;
+
+ELSE
+RETURN NEW;
+END IF;
+
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER session_time_update_trigger
+AFTER UPDATE ON Sessions
+FOR EACH ROW EXECUTE FUNCTION session_time_update_func();
+
+CREATE OR REPLACE FUNCTION session_time_update_func() RETURNS TRIGGER
+AS $$
+DECLARE
+same_session_time int;
+BEGIN
+
+same_session_time := 0;
+
+select count(*) INTO same_session_time
+from Sessions
+where exists ( 
+select 1 
+from Sessions
+where NEW.session_date = session_date
+and (NEW.start_time >= start_time
+and NEW.start_time <= end_time
+or NEW.end_time >= start_time
+and NEW.end_time <= end_time
+or NEW.start_time < start_time
+and NEW.end_time > end_time)
+and (NEW.course_id = course_id
+or NEW.rid = rid
+or NEW.eid = eid)
+);
+
+IF same_session_time > 1 THEN
+RAISE NOTICE 'UPDATE ERROR: This session is in conflict with other sessions';
+RETURN NULL;
+
 ELSE
 RETURN NEW;
 END IF;
