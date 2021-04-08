@@ -205,3 +205,10 @@ call register_session(9, 0, date '2021-01-24', 1, FALSE);
 call register_session(6,7,date '2021-02-01',1, FALSE);
 call register_session(7,7,date '2021-03-01',1, FALSE);
 call register_session(8,7,date '2021-03-01',1, FALSE);
+
+insert into pay_slips values (date '2021-03-30',1000.50,25,NULL,12);
+insert into pay_slips values (date '2021-03-30',4000.00,NULL,25,5);
+insert into pay_slips values (date '2021-03-30',4000.00,NULL,20,3);
+insert into pay_slips values (date '2021-02-28',3900.00,NULL,20,6);
+insert into pay_slips values (date '2021-01-30',5900.00,NULL,20,8);
+insert into registers values( date '2021-03-09',374288248316142,11,3,9,date '2021-03-15');
