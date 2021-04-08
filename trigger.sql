@@ -1,10 +1,12 @@
 --check if start date/end date of a course offering is the date of its earliest/latest session
-CREATE OR REPLACE FUNCTION course_offering_func() RETURNS TRIGGER
+CREATE OR REPLACE FUNCTION course_offering_date_func() RETURNS TRIGGER
 AS $$
 DECLARE
 
 earliest_session_date date;
 latest_session_date date;
+_start_date date;
+_end_date date;
 
 BEGIN
 
@@ -28,15 +30,20 @@ from Sessions
 where course_id = S.course_id
 and launch_date = S.launch_date);
 
-IF NOT NEW.start_date = earliest_session_date THEN
+select start_date, end_date INTO _start_date, _end_date
+from Course_offerings
+where NEW.course_id = course_id
+and NEW.launch_date = launch_date;
+
+IF NOT _start_date = earliest_session_date THEN
 RAISE NOTICE 'Start date of course offering is not the date of its earliest session';
 END IF;
 
-IF NOT NEW.end_date = latest_session_date THEN
+IF NOT _end_date = latest_session_date THEN
 RAISE NOTICE 'End date of course offering is not the date of its latest session';
 END IF;
 
-IF NOT (NEW.start_date = earliest_session_date and NEW.end_date = latest_session_date) THEN
+IF NOT (_start_date = earliest_session_date and _end_date = latest_session_date) THEN
 	RETURN NULL;
 ELSE
 	RETURN NEW;
@@ -45,12 +52,12 @@ END IF;
 END;
 $$ LANGUAGE plpgsql;
 
-drop trigger if exists course_offering_trigger on Course_offerings;
+drop trigger if exists course_offering_date_trigger on Sessions;
 
-CREATE CONSTRAINT TRIGGER course_offering_trigger
-AFTER INSERT OR UPDATE ON Course_offerings
+CREATE CONSTRAINT TRIGGER course_offering_date_trigger
+AFTER INSERT OR UPDATE OR DELETE ON Sessions
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE PROCEDURE course_offering_func();
+FOR EACH ROW EXECUTE PROCEDURE course_offering_date_func();
 
 
 --checks if the instructor specialises in the area of the session he is assigned to
