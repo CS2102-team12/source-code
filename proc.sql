@@ -1177,18 +1177,31 @@ returns table(course_name text, course_fee numeric, session_date_ date,
 start_time_ time, session_duration_ interval, instructor_ text) as $$
 
 BEGIN
-    RETURN QUERY(WITH r1 AS (SELECT cust_id, sid, course_id, launch_date FROM Registers),
-    co1 AS (SELECT course_id, launch_date, fees FROM Course_offerings),
-    c1 AS (SELECT course_id, name as cname FROM Courses),
-    s1 AS (SELECT sid, session_date, start_time, end_time, eid, launch_date, course_id FROM Sessions),
-    e1 AS (SELECT eid, name as ename FROM Employees)
-    SELECT cname, fees, session_date, start_time, 
-    end_time - start_time as session_duration, ename
-    FROM r1 natural join
-    (co1 natural join c1) natural join
-    (s1 natural join e1)
-    WHERE cust_id = cid
-    ORDER BY session_date, start_time asc);
+    RETURN QUERY (
+        WITH cust_registers AS (SELECT cust_id, sid, launch_date, course_id 
+        FROM Registers where cust_id = cid),
+        cust_redeems AS (SELECT cust_id, sid, launch_date, course_id
+        FROM Redeems where cust_id = cid),
+        c1 AS (SELECT course_id, name as cname FROM Courses),
+        e1 AS (SELECT eid, name as ename FROM Employees),
+        co1 AS (SELECT course_id, launch_date, fees FROM Course_offerings),
+        s1 AS (SELECT start_time, end_time, session_date, course_id, launch_date, sid, eid FROM Sessions),
+        c2 AS (SELECT * FROM c1 natural join co1),
+        s2 AS (SELECT * FROM s1 natural join c2),
+        s3 AS (SELECT * FROM s2 natural join e1),
+        cust_registers_with_cname AS (SELECT * FROM cust_registers 
+            natural join s3),
+        cust_redeems_with_cname AS (SELECT * FROM cust_redeems 
+            natural join s3)
+        SELECT cname, fees, session_date, start_time, 
+        end_time - start_time, ename
+        FROM cust_registers_with_cname
+        UNION
+        SELECT cname, fees, session_date, start_time, 
+        end_time - start_time, ename
+        FROM cust_redeems_with_cname
+        ORDER BY session_date, start_time asc
+    );
 END;
 $$ LANGUAGE plpgsql;
 
