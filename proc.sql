@@ -1115,6 +1115,17 @@ DECLARE
     cid INT;
 
 BEGIN
+    if e_date < s_date then 
+        raise exception 'Course package sale start date (%) cannot be later than end date (%).', s_date, e_date;
+
+    elseif n_free <= 0 then
+        raise exception 'Number of redemptions cannot be less than or equal zero.';
+
+    elseif c_price < 0 then
+        raise exception 'Price cannot be negative.';
+    
+    end if;
+
     SELECT case
         when max(package_id) is null then 0
         else max(package_id)
@@ -1327,7 +1338,7 @@ BEGIN
         SET start_date = new_session_day
         WHERE course_id = cid AND launch_date = l_date;
     
-    ELSEIF new_session_id = num_sessions THEN
+    ELSEIF new_session_id = num_sessions + 1 THEN
         UPDATE Course_offerings
         SET end_date = new_session_day 
         WHERE course_id = cid AND launch_date = l_date;
