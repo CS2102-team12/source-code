@@ -87,6 +87,19 @@ INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(13 ,'LT13','21');
 INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(14 ,'LT14','31');
 INSERT  INTO  Rooms(rid,  location,  seating_capacity)  VALUES(15 ,'LT15','14');
 
+call buy_course_package(0,1);
+call buy_course_package(0,2);
+call buy_course_package(1,3);
+call buy_course_package(2,4);
+call buy_course_package(3,5);
+call buy_course_package(6,6);
+call buy_course_package(7,7);
+call buy_course_package(8,7);
+call buy_course_package(9,9);
+call buy_course_package(10,10);
+call buy_course_package(11,11);
+call buy_course_package(12,12);
+
 call  add_course_offering(0, date  '2020-04-05',631.33,date  '2020-10-01',48470,2,'(2020-11-27,16,2)','(2020-10-23,09,3)','(2020-11-03,10,1)'); 
 call  add_course_offering(2 , date  '2020-02-10' ,91.01, date  '2020-09-04' ,4602,5, '(2020-11-06,10,1)',  '(2020-12-02,15,4)'); 
 call  add_course_offering(3 , date  '2020-10-23' ,517.71, date  '2020-12-11' ,18563,7, '(2020-11-27,16,2)',  '(2020-10-23,9,3)',  '(2020-11-03,10,1)'); 
@@ -107,6 +120,11 @@ call  add_course_offering(13 , date  '2020-12-03' ,329.53, date  '2021-02-04' ,6
 call  add_course_offering(1 , date  '2020-04-05' ,631.33, date  '2020-10-01' ,48470,7, '(2020-11-27,17,2)',  '(2020-10-23,9,3)',  '(2020-11-03,10,1)'); 
 call  add_course_offering(11 , date  '2020-07-29' ,534.47, date  '2020-09-23' ,30621,5, '(2020-11-26,16,10)',  '(2020-10-23,9,4)',  '(2020-11-25,10,6)'); 
 call  add_course_offering(3 , date  '2020-10-23' ,517.71, date  '2020-12-11' ,18563,2, '(2020-12-30,16,14)',  '(2021-01-06,9,12)',  '(2021-01-21,14,4)'); 
+call  add_course_offering(0 , date  '2021-1-23' ,517.71, date  '2021-05-11' ,18563,2, '(2021-12-30,16,14)'); 
+call  add_course_offering(6 , date  '2021-03-18' ,795.08, date  '2021-06-23' ,49810,7, '(2021-07-04,9,3)');
+call  add_course_offering(0 , date  '2021-1-24' ,517.71, date  '2021-05-12' ,18563,2, '(2021-12-20,16,14)');                                                                                                   
+call  add_course_offering(7 , date  '2021-02-01' ,534.47, date  '2021-05-24' ,100,5, '(2021-06-24,16,10)');
+call  add_course_offering(7 , date  '2021-03-01' ,534.47, date  '2021-05-25' ,100,5, '(2021-06-25,16,10)');
 
 select get_my_course_package(0);
 select get_my_course_package(1);
@@ -147,6 +165,14 @@ call update_course_session(0, 8, date '2021-03-08', 2);
 
 call update_instructor(1,0, date '2020-04-05', 16);
 
+call update_room (4, date '2021-04-18', 2, 1);
+call update_room (8, date'2021-03-08', 1, 1);
+call update_room (8, date'2021-03-08', 1, 10);
+call update_room ( 6, date '2021-04-18', 2, 3);
+call update_room ( 9, date '2021-03-15', 3, 4);
+call update_room ( 6, date '2021-04-18', 2, 5);
+call update_room (9, date '2021-03-15', 3, 6);
+
 call cancel_registration(4, 6, date '2021-04-18');
 call cancel_registration(2,8, date'2021-03-08');
 call cancel_registration(0,8, date'2021-03-08');
@@ -173,4 +199,9 @@ call register_session(0, 6, date '2021-04-18', 2, TRUE);
 call register_session(4, 6, date '2021-04-18', 2, FALSE);
 call register_session(2,8, date'2021-03-08', 1,FALSE);
 call register_session(0,8, date'2021-03-08', 1,FALSE);
-                                                                                                                                        
+call register_session(7, 6, date '2021-03-18', 1, FALSE);
+call register_session(8, 6, date '2021-03-18', 1, TRUE);
+call register_session(9, 0, date '2021-01-24', 1, FALSE);
+call register_session(6,7,date '2021-02-01',1, FALSE);
+call register_session(7,7,date '2021-03-01',1, FALSE);
+call register_session(8,7,date '2021-03-01',1, FALSE);
