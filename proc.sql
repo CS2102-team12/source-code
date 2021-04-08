@@ -1475,8 +1475,7 @@ LOOP
 			--check if instructor has any session on this day
 			IF NOT EXISTS (select 1 
 				from Sessions S1 
-				where S1.eid = r.eid 
-				and S1.course_id = cid 
+				where S1.eid = r.eid
 				and S1.session_date = start_day) THEN
 				while start_hour + make_interval(hours := session_duration) <= '1800'
 				LOOP
@@ -1501,8 +1500,7 @@ LOOP
 						--check if instructor has another session clashing with this hour
 						IF NOT EXISTS (select 1 
 							from Sessions S1 
-							where S1.eid = r.eid
-							and S1.course_id = cid  
+							where S1.eid = r.eid  
 							and S1.session_date = start_day 
 							and ((start_hour >= start_time and start_hour <= end_time)
 							or (end_hour >= start_time and end_hour <= end_time)
