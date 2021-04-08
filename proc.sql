@@ -1188,6 +1188,8 @@ DECLARE
     num_registrations int;
     session_start_date date;
     num_sessions int;
+    check_if_session_exist int;
+
     current_sid int;
     loop_counter int;
 
@@ -1201,6 +1203,9 @@ BEGIN
     SELECT count(distinct sid) INTO num_sessions FROM Sessions
     WHERE course_id = cid AND launch_date = l_date;
 
+    SELECT count(*) INTO check_if_session_exist FROM Sessions
+    WHERE course_id = cid AND launch_date = l_date AND sid = session_id;
+
     if num_registrations > 0 then 
         raise exception 'Session cannot be removed. Number of registrations more than 0.';
 
@@ -1209,6 +1214,9 @@ BEGIN
     
     elseif num_sessions <= 1 then
         raise exception 'Session cannot be removed. Number of sessions cannot be 0.';
+
+    elseif check_if_session_exist <= 0 then
+        raise exception 'No such session is found.';
 
     end if;
 
@@ -1241,8 +1249,6 @@ BEGIN
 
         loop_counter := loop_counter + 1;
     END LOOP;
-
-    COMMIT;
 
 END;
 $$ LANGUAGE plpgsql;
@@ -1296,7 +1302,7 @@ BEGIN
     (session_date < new_session_day OR (session_date = new_session_day AND start_time < new_session_start_hour))));
 
     if deadline < current_date then
-        raise exception 'Course offering deadline has passed.';
+        raise exception 'Course offering deadline has passed. Deadline: %; Today: %', deadline, current_date;
 
     elseif new_session_day < deadline + 10 then
         raise exception 'Session day must be at least 10 days after registration deadline.';
@@ -1309,8 +1315,11 @@ BEGIN
     
     elseif inconsistent_id_and_date > 0 then
         raise exception 'Mismatch with existing session id and dates.';
-
+    
     end if;
+
+    /* make sure insertion is within 1 to num_sessions + 1. */
+    new_session_id := least(greatest(new_session_id, 1), num_sessions + 1);
 
     /* If new session is earliest or latest, change start_date or end_date of course offering. */
     IF new_session_id = 1 THEN
@@ -1343,9 +1352,6 @@ BEGIN
     VALUES (new_session_id, new_session_day, new_session_start_hour,
     new_session_start_hour + make_interval(hours := session_duration), 
     room_id, instructor_id, l_date, cid);
-
-    COMMIT;
-
 END;
 $$ LANGUAGE plpgsql;
 
