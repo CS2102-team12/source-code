@@ -1422,6 +1422,10 @@ DECLARE
 
 BEGIN
 
+IF cid IS NULL OR start_date IS NULL OR end_date IS NULL THEN
+	RAISE EXCEPTION 'Arguments cannot be null!';
+END IF;
+
 select duration INTO session_duration
 from Courses
 where course_id = cid;
@@ -1430,33 +1434,37 @@ OPEN curs;
 LOOP
 	FETCH curs INTO r;
 	EXIT WHEN NOT FOUND;
-			
-	select sum(DATE_PART('hour',end_time - start_time)) into num_hours
-	from Sessions S1
-	where S1.eid = r.eid
-	and extract(month from S1.session_date) = extract(month from start_date)
-	and extract(year from S1.session_date) = extract(year from start_date);
+
+	eid := r.eid;
+	name := r.name;
+	start_day := start_date;
+
+	while start_day <= end_date
+	LOOP
+
+		IF extract(dow from start_day) = 6 THEN
+			start_day := start_day + '2 days'::interval;
+			CONTINUE;
+		ELSIF extract(dow from start_day) = 0 THEN
+			start_day := start_day + '1 day'::interval;
+			CONTINUE;
+		END IF;
+		
+		select COALESCE(sum(DATE_PART('hour',end_time - start_time)),0) into num_hours
+		from Sessions S1
+		where S1.eid = r.eid
+		and extract(month from S1.session_date) = extract(month from start_day)
+		and extract(year from S1.session_date) = extract(year from start_day);
 
 	--check if instructor is part-time and will exceed 30 hrs
-	IF EXISTS (select 1 from Part_time_Instructors P where P.eid = r.eid) and num_hours + session_duration > 30 THEN
-		CONTINUE;	
-	ELSE
-		eid := r.eid;
-		name := r.name;
-		start_day := start_date;
-	
-		while start_day <= end_date
-		LOOP
-
-			IF extract(dow from start_day) = 6 THEN
-				start_day := start_day + '2 days'::interval;
-				CONTINUE;
-			ELSIF extract(dow from start_day) = 0 THEN
-				start_day := start_day + '1 day'::interval;
-				CONTINUE;
-			END IF;
-
+		IF EXISTS (select 1 from Part_time_Instructors P where P.eid = r.eid) and num_hours + session_duration > 30 THEN
+			start_day := start_day + '1 day'::interval;
+			CONTINUE;	
+		ELSE
+			
 			day := start_day;
+			start_hour := '0900';
+			available_hours := array[]::time[];
 
 			--check if instructor has any session on this day
 			IF NOT EXISTS (select 1 
@@ -1464,8 +1472,6 @@ LOOP
 				where S1.eid = r.eid 
 				and S1.course_id = cid 
 				and S1.session_date = start_day) THEN
-				start_hour := '0900';
-				end_hour := start_hour + make_interval(hours := session_duration);
 				while start_hour + make_interval(hours := session_duration) <= '1800'
 				LOOP
 					end_hour := start_hour + make_interval(hours := session_duration);
@@ -1479,9 +1485,6 @@ LOOP
 				END LOOP;
 				RETURN NEXT;
 			ELSE
-				start_hour := '0900';
-				available_hours := array[]::time[];
-
 				while start_hour + make_interval(hours := session_duration) <= '1800'
 				LOOP
 					end_hour := start_hour + make_interval(hours := session_duration);
@@ -1495,11 +1498,11 @@ LOOP
 							where S1.eid = r.eid
 							and S1.course_id = cid  
 							and S1.session_date = start_day 
-							and (start_hour >= start_time and start_hour <= end_time)
+							and ((start_hour >= start_time and start_hour <= end_time)
 							or (end_hour >= start_time and end_hour <= end_time)
 							or (start_hour < start_time and end_hour > end_time)
-							or DATE_PART('hour', start_time - end_hour) < 1
-							or DATE_PART('hour', start_hour - end_time) < 1) THEN
+							or DATE_PART('hour', start_time - end_hour) = 0
+							or DATE_PART('hour', start_hour - end_time) = 0)) THEN
 								available_hours := array_append(available_hours, start_hour);
 						END IF;
 					END IF;
@@ -1511,11 +1514,11 @@ LOOP
 				END IF;
 
 			END IF;
+		END IF;
+		
+		start_day := start_day + '1 day'::interval;
 
-			start_day := start_day + '1 day'::interval;
-
-		END LOOP;
-	END IF;
+	END LOOP;
 END LOOP;
 CLOSE curs;
 END;
