@@ -1388,54 +1388,44 @@ $$ LANGUAGE plpgsql;
 --30
 create or replace function view_manager_report()
 returns table(manager_name text, num_course_areas bigint, num_course_offerings bigint,
-total_registration_fees numeric, best_selling_course_offering text) as $$
-    
+total_registration_fees numeric, best_selling_course_offering text) as $$    
 BEGIN 
-    RETURN QUERY(WITH course_offerings_and_fees AS (
-    SELECT co1.launch_date as launch_date, co1.course_id as course_id,
-    co1.mid as eid, (count(*) * co1.fees) as registration_fees 
-    FROM Course_offerings as co1, Sessions as s1, Registers as r1
-    WHERE co1.launch_date = s1.launch_date AND co1.course_id = s1.course_id
-    AND r1.launch_date = co1.launch_date AND r1.course_id = co1.course_id
-    AND r1.sid = s1.sid 
-    AND extract(year from co1.end_date) = extract(year from current_date)
-    GROUP BY co1.launch_date, co1.course_id, co1.mid), 
-
-    course_offerings_and_redemptions AS (
-    SELECT co1.launch_date as launch_date, co1.course_id as course_id,
-    co1.mid as eid, sum(r1.p1) as redemption_fees 
-    FROM Course_offerings as co1, Sessions as s1, (Redeems natural join 
-    (SELECT package_id, round(price/num_free_registrations) as p1 FROM Course_packages) as cp1) as r1
-    WHERE co1.launch_date = s1.launch_date AND co1.course_id = s1.course_id
-    AND r1.launch_date = co1.launch_date AND r1.course_id = co1.course_id
-    AND r1.sid = s1.sid
-    AND extract(year from co1.end_date) = extract(year from current_date)
-    GROUP BY co1.launch_date, co1.course_id, co1.mid),
-
-    course_offerings_and_total_fees AS (
-    SELECT launch_date, course_id, eid, (redemption_fees + registration_fees) as total_fees
-    FROM course_offerings_and_fees natural join course_offerings_and_redemptions),
-
-    manager_and_best_selling AS (
-    SELECT co1.eid, co1.title
-    FROM (course_offerings_and_total_fees
-    natural join (SELECT course_id, title FROM Courses) as c1) as co1
-    WHERE co1.total_fees >= (SELECT max(total_fees)
-    FROM course_offerings_and_total_fees co2
-    WHERE co1.eid = co2.eid)),
-
-    final_without_best_selling AS (
-    SELECT eid, m_name, count(a_name) as a, 
-    count((launch_date, course_id)) as b, 
-    sum(total_fees) as c
-    FROM ((((Managers natural join (SELECT name as m_name, eid FROM Employees) as e1) 
-    natural left join (SELECT name as a_name, eid FROM course_areas) as ca1))
-    natural left join course_offerings_and_total_fees) 
-    GROUP BY eid, m_name)
-
-    SELECT m_name as manager_name, a, b, c, title as best_selling_course_offering
-    FROM final_without_best_selling natural join manager_and_best_selling
-    ORDER BY m_name asc);
+    RETURN QUERY(
+        WITH m1 AS (select * from Managers natural join Employees), 
+        r1 AS (select * from Registers natural join (select 
+            launch_date, course_id, fees, mid, end_date from course_offerings) as foo
+            where extract(year from end_date) = extract(year from current_date)),
+        cp1 AS (select package_id, price/num_free_registrations as fees
+            from Course_packages),
+        r2 AS (select * from Redeems natural join cp1 natural join (select 
+            launch_date, course_id, mid, end_date from course_offerings) as foo
+            where extract(year from end_date) = extract(year from current_date)),
+        best1 AS (select mid, course_id,
+            coalesce(sum(fees), 0) as total_fees_1
+            from r1 group by mid, course_id),
+        best2 AS (select mid, course_id,
+            coalesce(sum(fees), 0) as total_fees_2
+            from r2 group by mid, course_id),
+        best3 AS (select mid, course_id,
+            coalesce(total_fees_1, 0) + coalesce(total_fees_2, 0)
+            as total_fees
+            from best1 natural full join best2),
+        best4 AS (select * from best3 natural join (select
+            course_id, name as cname from Courses) as foo),
+        best5 AS (select mid, cname from best4 as foo
+            where total_fees = (select max(total_fees) from 
+            best4 where foo.mid = mid)),
+        best6 AS (select * from (select eid as mid from Managers) as foo
+            natural left join best5)
+        SELECT m1.name, (select count(*) from course_areas where eid = m1.eid),
+        (select count(*) from course_offerings where mid = m1.eid),
+        (select coalesce(sum(fees), 0) from r1 where mid = m1.eid) + 
+        (select coalesce(sum(fees), 0) from r2 where mid = m1.eid),
+        (select string_agg(cname, ', ') from best6 
+            where mid = m1.eid group by mid)
+        FROM m1
+        ORDER BY m1.name asc
+    );
 END;
 $$ LANGUAGE plpgsql;
 
