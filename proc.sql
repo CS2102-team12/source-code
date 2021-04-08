@@ -1156,17 +1156,23 @@ create or replace function get_available_course_sessions(in l_date date, in cid 
 returns table(session_date date, start_time time, instructor text, num_remaining_seats bigint) as $$
 DECLARE
     s_capacity int;
+    d_line date;
 
 BEGIN
-    SELECT seating_capacity INTO s_capacity FROM Course_offerings
+    SELECT seating_capacity, registration_deadline
+    INTO s_capacity, d_line FROM Course_offerings
     WHERE l_date = launch_date AND cid = course_id;
 
-    RETURN QUERY(SELECT s1.session_date, s1.start_time, s1.name as instructor, 
-    s_capacity - count(distinct s1.cust_id) as num_remaining_seats
-    FROM ((Sessions natural join (SELECT eid, name FROM Employees) as foo1)
-        natural join (SELECT cust_id, sid FROM Registers) as foo2) as s1
+    RETURN QUERY(
+    SELECT s1.session_date, s1.start_time, s1.name as instructor, 
+    s_capacity - (select count(*) from Registers 
+    where launch_date = l_date and course_id = cid and sid = s1.sid)
+    -  (select count(*) from Redeems 
+    where launch_date = l_date and course_id = cid and sid = s1.sid)
+    as num_remaining_seats
+    FROM (Sessions natural join (SELECT eid, name FROM Employees) as foo1) as s1
     WHERE l_date = launch_date AND cid = course_id
-    GROUP BY s1.session_date, s1.start_time, s1.name
+    AND d_line >= current_date
     ORDER BY (s1.session_date, s1.start_time) asc);
 END;
 $$ LANGUAGE plpgsql;
