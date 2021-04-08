@@ -1115,6 +1115,17 @@ DECLARE
     cid INT;
 
 BEGIN
+    if e_date < s_date then 
+        raise exception 'Course package sale start date (%) cannot be later than end date (%).', s_date, e_date;
+
+    elseif n_free <= 0 then
+        raise exception 'Number of redemptions cannot be less than or equal zero.';
+
+    elseif c_price < 0 then
+        raise exception 'Price cannot be negative.';
+    
+    end if;
+
     SELECT case
         when max(package_id) is null then 0
         else max(package_id)
@@ -1145,17 +1156,23 @@ create or replace function get_available_course_sessions(in l_date date, in cid 
 returns table(session_date date, start_time time, instructor text, num_remaining_seats bigint) as $$
 DECLARE
     s_capacity int;
+    d_line date;
 
 BEGIN
-    SELECT seating_capacity INTO s_capacity FROM Course_offerings
+    SELECT seating_capacity, registration_deadline
+    INTO s_capacity, d_line FROM Course_offerings
     WHERE l_date = launch_date AND cid = course_id;
 
-    RETURN QUERY(SELECT s1.session_date, s1.start_time, s1.name as instructor, 
-    s_capacity - count(distinct s1.cust_id) as num_remaining_seats
-    FROM ((Sessions natural join (SELECT eid, name FROM Employees) as foo1)
-        natural join (SELECT cust_id, sid FROM Registers) as foo2) as s1
+    RETURN QUERY(
+    SELECT s1.session_date, s1.start_time, s1.name as instructor, 
+    s_capacity - (select count(*) from Registers 
+    where launch_date = l_date and course_id = cid and sid = s1.sid)
+    -  (select count(*) from Redeems 
+    where launch_date = l_date and course_id = cid and sid = s1.sid)
+    as num_remaining_seats
+    FROM (Sessions natural join (SELECT eid, name FROM Employees) as foo1) as s1
     WHERE l_date = launch_date AND cid = course_id
-    GROUP BY s1.session_date, s1.start_time, s1.name
+    AND d_line >= current_date
     ORDER BY (s1.session_date, s1.start_time) asc);
 END;
 $$ LANGUAGE plpgsql;
@@ -1166,18 +1183,31 @@ returns table(course_name text, course_fee numeric, session_date_ date,
 start_time_ time, session_duration_ interval, instructor_ text) as $$
 
 BEGIN
-    RETURN QUERY(WITH r1 AS (SELECT cust_id, sid, course_id, launch_date FROM Registers),
-    co1 AS (SELECT course_id, launch_date, fees FROM Course_offerings),
-    c1 AS (SELECT course_id, name as cname FROM Courses),
-    s1 AS (SELECT sid, session_date, start_time, end_time, eid, launch_date, course_id FROM Sessions),
-    e1 AS (SELECT eid, name as ename FROM Employees)
-    SELECT cname, fees, session_date, start_time, 
-    end_time - start_time as session_duration, ename
-    FROM r1 natural join
-    (co1 natural join c1) natural join
-    (s1 natural join e1)
-    WHERE cust_id = cid
-    ORDER BY session_date, start_time asc);
+    RETURN QUERY (
+        WITH cust_registers AS (SELECT cust_id, sid, launch_date, course_id 
+        FROM Registers where cust_id = cid),
+        cust_redeems AS (SELECT cust_id, sid, launch_date, course_id
+        FROM Redeems where cust_id = cid),
+        c1 AS (SELECT course_id, name as cname FROM Courses),
+        e1 AS (SELECT eid, name as ename FROM Employees),
+        co1 AS (SELECT course_id, launch_date, fees FROM Course_offerings),
+        s1 AS (SELECT start_time, end_time, session_date, course_id, launch_date, sid, eid FROM Sessions),
+        c2 AS (SELECT * FROM c1 natural join co1),
+        s2 AS (SELECT * FROM s1 natural join c2),
+        s3 AS (SELECT * FROM s2 natural join e1),
+        cust_registers_with_cname AS (SELECT * FROM cust_registers 
+            natural join s3),
+        cust_redeems_with_cname AS (SELECT * FROM cust_redeems 
+            natural join s3)
+        SELECT cname, fees, session_date, start_time, 
+        end_time - start_time, ename
+        FROM cust_registers_with_cname
+        UNION
+        SELECT cname, fees, session_date, start_time, 
+        end_time - start_time, ename
+        FROM cust_redeems_with_cname
+        ORDER BY session_date, start_time asc
+    );
 END;
 $$ LANGUAGE plpgsql;
 
@@ -1327,7 +1357,7 @@ BEGIN
         SET start_date = new_session_day
         WHERE course_id = cid AND launch_date = l_date;
     
-    ELSEIF new_session_id = num_sessions THEN
+    ELSEIF new_session_id = num_sessions + 1 THEN
         UPDATE Course_offerings
         SET end_date = new_session_day 
         WHERE course_id = cid AND launch_date = l_date;
