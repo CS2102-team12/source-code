@@ -201,6 +201,7 @@ primary key(redeem_date,sid,course_id,launch_date,buy_date,package_id,card_numbe
 );
 
 
+
 --checks if the instructor specialises in the area of the session he is assigned to
 --checks if the instructor is teaching 2 consecutive sessions
 CREATE TRIGGER session_instructor_trigger
@@ -231,8 +232,8 @@ select count(*) INTO inst_time
 from Sessions
 where NEW.eid = eid
 and NEW.session_date = session_date
-and (DATE_PART('hour', NEW.start_time-end_time) < 1
-or DATE_PART('hour', start_time-NEW.end_time) < 1);
+and (DATE_PART('hour', NEW.start_time-end_time) = 0
+or DATE_PART('hour', start_time-NEW.end_time) = 0);
 
 select sum(DATE_PART('hour',end_time-start_time)) into part_time_inst_hrs
 from Part_time_Instructors natural join Sessions 
@@ -281,7 +282,7 @@ $$ LANGUAGE plpgsql;
 --checks if the room to be inserted is being used by other sessions
 --checks if the instructor assigned has other sessions at the same time
 CREATE TRIGGER session_time_trigger
-BEFORE INSERT ON Sessions
+BEFORE INSERT OR UPDATE ON Sessions
 FOR EACH ROW EXECUTE FUNCTION session_time_func();
 
 CREATE OR REPLACE FUNCTION session_time_func() RETURNS TRIGGER
@@ -295,12 +296,9 @@ same_session_time := 0;
 select count(*) INTO same_session_time
 from Sessions
 where NEW.session_date = session_date
-and (NEW.start_time >= start_time
-and NEW.start_time <= end_time
-or NEW.end_time >= start_time
-and NEW.end_time <= end_time
-or NEW.start_time < start_time
-and NEW.end_time > end_time)
+and ((NEW.start_time >= start_time and NEW.start_time <= end_time)
+or (NEW.end_time >= start_time and NEW.end_time <= end_time)
+or (NEW.start_time < start_time and NEW.end_time > end_time))
 and (NEW.course_id = course_id
 or NEW.rid = rid
 or NEW.eid = eid);
@@ -405,6 +403,7 @@ IF (TG_OP='UPDATE') THEN
 END IF;
 END;
 $$ LANGUAGE plpgsql;
+
 
 --checks if a customer has already registered for a course session for a particular course using course package redemption
 CREATE TRIGGER redemption_limit_trigger
