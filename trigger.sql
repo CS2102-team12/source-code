@@ -50,7 +50,7 @@ drop trigger if exists course_offering_trigger on Course_offerings;
 CREATE CONSTRAINT TRIGGER course_offering_trigger
 AFTER INSERT OR UPDATE ON Course_offerings
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION course_offering_func();
+FOR EACH ROW EXECUTE PROCEDURE course_offering_func();
 
 
 --checks if the instructor specialises in the area of the session he is assigned to
@@ -118,7 +118,7 @@ drop trigger if exists session_instructor_trigger on Sessions;
 CREATE CONSTRAINT TRIGGER session_instructor_trigger
 AFTER INSERT OR UPDATE ON Sessions
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION session_instructor_func();
+FOR EACH ROW EXECUTE PROCEDURE session_instructor_func();
 
 
 --checks if the session to be inserted clashes with another session of the same course offering
@@ -142,7 +142,7 @@ and (NEW.course_id = course_id
 or NEW.rid = rid
 or NEW.eid = eid);
 
-IF same_session_time > 0 THEN
+IF same_session_time > 1 THEN
 	RAISE NOTICE 'This session is in conflict with other sessions';
 	RETURN NULL;
 ELSE
@@ -157,7 +157,7 @@ drop trigger if exists session_time_trigger on Sessions;
 CREATE CONSTRAINT TRIGGER session_time_trigger
 AFTER INSERT OR UPDATE ON Sessions
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION session_time_func();
+FOR EACH ROW EXECUTE PROCEDURE session_time_func();
 
 
 --checks if a customer has already registered for a course session for a particular course using credit card
@@ -212,10 +212,10 @@ IF num_redeem > 0 THEN
 	RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
 END IF;
 
-IF num_reg > 0 THEN
+IF num_reg > 1 THEN
 	RAISE NOTICE 'Customer has already registered for a course session for this course offering';
 END IF;
-IF num_reg > 0 or num_redeem > 0 or NEW.reg_date > reg_deadline or num_registration = capacity THEN
+IF num_reg > 1 or num_redeem > 0 or NEW.reg_date > reg_deadline or num_registration = capacity THEN
 	RETURN NULL;
 ELSE
 	RETURN NEW;
@@ -229,7 +229,7 @@ drop trigger if exists registration_limit_trigger on Registers;
 CREATE CONSTRAINT TRIGGER registration_limit_trigger
 AFTER INSERT OR UPDATE ON Registers
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION registration_limit_func();
+FOR EACH ROW EXECUTE PROCEDURE registration_limit_func();
 
 
 --checks if a customer has already registered for a course session for a particular course using course package redemption
@@ -284,10 +284,10 @@ IF num_reg > 0 THEN
 	RAISE NOTICE 'Customer has already registered for a course session for this course offering';
 END IF;
 	
-IF num_redeem > 0 THEN
+IF num_redeem > 1 THEN
 	RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
 END IF;
-IF num_reg > 0 or num_redeem > 0 or NEW.redeem_date > reg_deadline or num_registration = capacity THEN
+IF num_reg > 0 or num_redeem > 1 or NEW.redeem_date > reg_deadline or num_registration = capacity THEN
 	RETURN NULL;
 ELSE
 	RETURN NEW;
@@ -301,7 +301,7 @@ drop trigger if exists redemption_limit_trigger on Redeems;
 CREATE CONSTRAINT TRIGGER redemption_limit_trigger
 AFTER INSERT OR UPDATE ON Redeems
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION redemption_limit_func();
+FOR EACH ROW EXECUTE PROCEDURE redemption_limit_func();
 
 
 --check if a customer has more than 1 active/partially active packages
@@ -329,13 +329,13 @@ where package_id = B1.package_id
 and session_date - now()::date >= 7
 );
 	
-IF num_active_pkg = 1 THEN
+IF num_active_pkg > 1 THEN
 	RAISE NOTICE 'Customer can only have at most 1 active package';
 END IF;
-IF num_partially_active_pkg = 1 THEN
+IF num_partially_active_pkg > 1 THEN
 	RAISE NOTICE 'Customer can only have at most 1 partially active package';
 END IF;
-IF num_active_pkg = 1 or num_partially_active_pkg = 1 THEN
+IF num_active_pkg > 1 or num_partially_active_pkg > 1 THEN
 	RETURN NULL;
 ELSE
 	RETURN NEW;
@@ -348,4 +348,4 @@ drop trigger if exists package_trigger on Buys;
 CREATE CONSTRAINT TRIGGER package_trigger
 AFTER INSERT OR UPDATE ON Buys
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION package_func();
+FOR EACH ROW EXECUTE PROCEDURE package_func();
