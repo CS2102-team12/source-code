@@ -345,7 +345,7 @@ BEGIN
             CONTINUE;
         END IF;
 
-        _last_amt := 0;
+        _last_amt := -1;
         _skip := false;
 
         FOR _offering in SELECT * FROM Course_offerings 
@@ -376,6 +376,7 @@ BEGIN
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
 
 -- 29
 
