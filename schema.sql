@@ -12,13 +12,15 @@ email text not null
 );
 
 create table Credit_cards (
-card_number bigint primary key,
+card_number bigint primary key
+constraint _card_number check(card_number > 0),
 CVV int not null,
 expiry_date date not null
 );
 
 create table Owns (
-card_number bigint references Credit_cards,
+card_number bigint references Credit_cards
+constraint _card_number check(card_number > 0),
 cust_id int references Customers,
 from_date date not null,
 primary key(card_number,cust_id)
@@ -36,23 +38,27 @@ join_date date not null
 
 create table Pay_slips (
 payment_date date not null,
-amount numeric not null,
+amount numeric not null
+constraint _amount check(amount >= 0),
 num_work_hours numeric
-check (num_work_hours <= 30),
-num_work_days int,
+constraint part_time_hours check (num_work_hours <= 30),
+num_work_days int
+constraint _num_work_days check (num_work_days >= 0),
 eid int references Employees
 on delete cascade,
 primary key(eid,payment_date)
 );
 
 create table Part_time_Emp (
-hourly_rate numeric not null,
+hourly_rate numeric not null
+constraint _hourly_rate check(hourly_rate > 0),
 eid int primary key references Employees
 on delete cascade
 );
 
 create table Full_time_Emp (
-monthly_salary numeric not null,
+monthly_salary numeric not null
+constraint _monthly_salary check(monthly_salary > 0),
 eid int primary key references Employees
 on delete cascade
 );
@@ -70,16 +76,20 @@ on delete cascade
 create table Course_packages (
 package_id int primary key,
 sale_start_date date not null,
-sale_end_date date not null,
-num_free_registrations int not null,
+sale_end_date date not null
+constraint _sale_date check(sale_start_date::date <= sale_end_date::date),
+num_free_registrations int not null
+constraint _free_registrations check(num_free_registrations > 0),
 name text not null,
 price numeric not null
+constraint _price check(price > 0)
 );
 
 create table Rooms (
 rid int primary key,
 location text not null,
 seating_capacity int not null
+constraint _seating_capacity check(seating_capacity > 0)
 );
 
 create table Course_areas (
@@ -89,7 +99,8 @@ eid int not null references Managers
 
 create table Courses (
 course_id int primary key,
-duration int not null,
+duration int not null
+constraint _duration check(duration > 0),
 title text not null,
 description text not null, 
 name text not null references Course_areas
@@ -118,13 +129,18 @@ on delete cascade
 
 create table Course_offerings (
 launch_date date not null,
-start_date date not null,
-end_date date not null,
+start_date date not null
+constraint _start_date check(start_date::date > launch_date::date),
+end_date date not null
+constraint _end_date check (end_date::date >= start_date::date),
 registration_deadline date not null
-check ( DATE_PART('day',start_date::timestamp-registration_deadline::timestamp) >= 10),
-target_number_registrations int not null,
-seating_capacity int not null,
-fees numeric not null,
+constraint reg_deadline check ( DATE_PART('day',start_date::timestamp-registration_deadline::timestamp) >= 10),
+target_number_registrations int not null
+constraint _target_registrations check(target_number_registrations > 0),
+seating_capacity int not null
+constraint _seating_capacity check(seating_capacity > 0),
+fees numeric not null
+constraint _fees check(fees > 0),
 eid int not null references Administrators,
 mid int not null references Managers,
 course_id int references Courses
@@ -135,14 +151,15 @@ primary key(launch_date,course_id)
 create table Sessions (
 sid int,
 session_date date not null
-check ( extract(dow from session_date::timestamp) >= 1 and extract(dow from session_date::timestamp) <= 5),
+constraint session_day check ( extract(dow from session_date::timestamp) >= 1 and extract(dow from session_date::timestamp) <= 5),
 start_time time not null
-check ( start_time::time >= '0900' and start_time::time < '1200' or start_time::time >= '1400' and start_time::time < '1800'),
+constraint session_start_time check ( start_time::time >= '0900' and start_time::time < '1200' or start_time::time >= '1400' and start_time::time < '1800'),
 end_time time not null
-check (end_time::time <= '1800' and end_time::time > '0900'),
+constraint session_end_time check (end_time::time <= '1800' and end_time::time > '0900' and end_time::time > start_time::time),
 rid int not null references Rooms,
 eid int not null references Instructors,
-launch_date date,
+launch_date date
+constraint _launch_date check(launch_date::date < session_date::date),
 course_id int,
 foreign key(launch_date, course_id) references Course_offerings
 on delete cascade,
@@ -151,12 +168,14 @@ primary key(sid,course_id,launch_date)
 
 create table Cancels (
 cancel_date date,
-refund_amt numeric,
+refund_amt numeric
+constraint _refund_amt check(refund_amt >= 0),
 package_credit int,
 cust_id int references Customers,
 sid int,
 course_id int,
-launch_date date,
+launch_date date
+constraint _launch_date check(launch_date::date < cancel_date::date),
 foreign key(sid,course_id,launch_date) references Sessions
 on update cascade,
 primary key(cust_id,cancel_date,sid,course_id,launch_date)
@@ -164,11 +183,13 @@ primary key(cust_id,cancel_date,sid,course_id,launch_date)
 
 create table Registers (
 reg_date date,
-card_number bigint,
+card_number bigint
+constraint _card_number check(card_number > 0),
 cust_id int,
 sid int,
 course_id int,
-launch_date date,
+launch_date date
+constraint _launch_date check(launch_date::date < reg_date::date),
 foreign key(card_number,cust_id) references Owns,
 foreign key(sid,course_id,launch_date) references Sessions
 on update cascade,
@@ -178,7 +199,8 @@ primary key(card_number,cust_id,reg_date,sid,course_id,launch_date)
 create table Buys (
 buy_date date,
 package_id int references Course_packages,
-card_number bigint,
+card_number bigint
+constraint _card_number check(card_number > 0),
 cust_id int,
 num_remaining_redemptions int not null,
 foreign key(card_number,cust_id) references Owns,
@@ -187,13 +209,16 @@ primary key(buy_date,package_id,card_number,cust_id)
 
 create table Redeems (
 redeem_date date,
-buy_date date,
+buy_date date
+constraint _buy_date check(redeem_date::date >= buy_date::date),
 package_id int references Course_packages,
-card_number bigint,
+card_number bigint
+constraint _card_number check(card_number > 0),
 cust_id int,
 sid int,
 course_id int,
-launch_date date,
+launch_date date
+constraint _launch_date check(launch_date::date < redeem_date::date),
 foreign key(sid,course_id,launch_date) references Sessions
 on update cascade,
 foreign key(buy_date,package_id,card_number,cust_id) references Buys,
@@ -201,13 +226,60 @@ primary key(redeem_date,sid,course_id,launch_date,buy_date,package_id,card_numbe
 );
 
 
+--check if start date/end date of a course offering is the date of its earliest/latest session
+CREATE OR REPLACE FUNCTION course_offering_date_func() RETURNS TRIGGER
+AS $$
+DECLARE
+
+earliest_session_date date;
+latest_session_date date;
+_start_date date;
+_end_date date;
+
+BEGIN
+
+select session_date INTO earliest_session_date
+from Sessions S
+where NEW.course_id = course_id
+and NEW.launch_date = launch_date
+and session_date <= all (
+select session_date
+from Sessions
+where course_id = S.course_id
+and launch_date = S.launch_date);
+
+select session_date INTO latest_session_date
+from Sessions S
+where NEW.course_id = course_id
+and NEW.launch_date = launch_date
+and session_date >= all (
+select session_date
+from Sessions
+where course_id = S.course_id
+and launch_date = S.launch_date);
+
+select start_date, end_date INTO _start_date, _end_date
+from Course_offerings
+where NEW.course_id = course_id
+and NEW.launch_date = launch_date;
+
+IF NOT (_start_date = earliest_session_date and _end_date = latest_session_date) THEN
+	RAISE EXCEPTION 'Start/end date of course offering is not the date of its earliest/latest session';
+END IF;
+
+END;
+$$ LANGUAGE plpgsql;
+
+drop trigger if exists course_offering_date_trigger on Sessions;
+
+CREATE CONSTRAINT TRIGGER course_offering_date_trigger
+AFTER INSERT OR UPDATE OR DELETE ON Sessions
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE course_offering_date_func();
+
 
 --checks if the instructor specialises in the area of the session he is assigned to
 --checks if the instructor is teaching 2 consecutive sessions
-CREATE TRIGGER session_instructor_trigger
-BEFORE INSERT OR UPDATE ON Sessions
-FOR EACH ROW EXECUTE FUNCTION session_instructor_func();
-
 CREATE OR REPLACE FUNCTION session_instructor_func() RETURNS TRIGGER
 AS $$
 DECLARE
@@ -252,39 +324,29 @@ END IF;
 IF part_time_inst_hrs + session_duration > 30 THEN
 	RAISE NOTICE 'Part-time instructor not allowed to teach more than 30 hrs per month';
 END IF;
-
-IF (TG_OP='INSERT') THEN	
-	IF inst_time > 0 THEN
+	
+IF inst_time > 0 THEN
 	RAISE NOTICE 'Instructor not allowed to teach consecutive courses';
-	END IF;
-	IF inst_spec = 0 or inst_time > 0 or part_time_inst_hrs + session_duration > 30 THEN
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
 END IF;
 
-IF (TG_OP='UPDATE') THEN	
-	IF inst_time > 1 THEN
-		RAISE NOTICE 'Instructor not allowed to teach consecutive courses';
-	END IF;
-	IF inst_spec = 0 or inst_time > 1 or part_time_inst_hrs + session_duration > 30 THEN
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
+IF inst_spec = 0 or inst_time > 0 or part_time_inst_hrs + session_duration > 30 THEN
+	RAISE EXCEPTION 'Operation aborted';
 END IF;
+
 END;
 $$ LANGUAGE plpgsql;
+
+drop trigger if exists session_instructor_trigger on Sessions;
+
+CREATE CONSTRAINT TRIGGER session_instructor_trigger
+AFTER INSERT OR UPDATE ON Sessions
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE session_instructor_func();
 
 
 --checks if the session to be inserted clashes with another session of the same course offering
 --checks if the room to be inserted is being used by other sessions
 --checks if the instructor assigned has other sessions at the same time
-CREATE TRIGGER session_time_trigger
-BEFORE INSERT OR UPDATE ON Sessions
-FOR EACH ROW EXECUTE FUNCTION session_time_func();
-
 CREATE OR REPLACE FUNCTION session_time_func() RETURNS TRIGGER
 AS $$
 DECLARE
@@ -303,32 +365,22 @@ and (NEW.course_id = course_id
 or NEW.rid = rid
 or NEW.eid = eid);
 
-IF (TG_OP='INSERT') THEN	
-	IF same_session_time > 0 THEN
-		RAISE NOTICE 'INSERTION ERROR: This session is in conflict with other sessions';
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
+IF same_session_time > 1 THEN
+	RAISE EXCEPTION 'This session is in conflict with other sessions';
 END IF;
 
-IF (TG_OP='UPDATE') THEN	
-	IF same_session_time > 1 THEN
-		RAISE NOTICE 'UPDATE ERROR: This session is in conflict with other sessions';
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
-END IF;
 END;
 $$ LANGUAGE plpgsql;
 
+drop trigger if exists session_time_trigger on Sessions;
+
+CREATE CONSTRAINT TRIGGER session_time_trigger
+AFTER INSERT OR UPDATE ON Sessions
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE session_time_func();
+
 
 --checks if a customer has already registered for a course session for a particular course using credit card
-CREATE TRIGGER registration_limit_trigger
-BEFORE INSERT OR UPDATE ON Registers
-FOR EACH ROW EXECUTE FUNCTION registration_limit_func();
-
 CREATE OR REPLACE FUNCTION registration_limit_func() RETURNS TRIGGER
 AS $$
 DECLARE
@@ -380,36 +432,26 @@ IF num_redeem > 0 THEN
 	RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
 END IF;
 
-IF (TG_OP='INSERT') THEN	
-	IF num_reg > 0 THEN
-		RAISE NOTICE 'Customer has already registered for a course session for this course offering';
-	END IF;
-	IF num_reg > 0 or num_redeem > 0 or NEW.reg_date > reg_deadline or num_registration = capacity THEN
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
+IF num_reg > 1 THEN
+	RAISE NOTICE 'Customer has already registered for a course session for this course offering';
 END IF;
 
-IF (TG_OP='UPDATE') THEN
-	IF num_reg > 1 THEN
-		RAISE NOTICE 'Customer has already registered for a course session for this course offering';
-	END IF;
-	IF num_reg > 1 or num_redeem > 0 or NEW.reg_date > reg_deadline or num_registration = capacity THEN
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
+IF num_reg > 1 or num_redeem > 0 or NEW.reg_date > reg_deadline or num_registration = capacity THEN
+	RAISE EXCEPTION 'Operation aborted';
 END IF;
+
 END;
 $$ LANGUAGE plpgsql;
 
+drop trigger if exists registration_limit_trigger on Registers;
+
+CREATE CONSTRAINT TRIGGER registration_limit_trigger
+AFTER INSERT OR UPDATE ON Registers
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE registration_limit_func();
+
 
 --checks if a customer has already registered for a course session for a particular course using course package redemption
-CREATE TRIGGER redemption_limit_trigger
-BEFORE INSERT OR UPDATE ON Redeems
-FOR EACH ROW EXECUTE FUNCTION redemption_limit_func();
-
 CREATE OR REPLACE FUNCTION redemption_limit_func() RETURNS TRIGGER
 AS $$
 DECLARE
@@ -460,36 +502,27 @@ END IF;
 IF num_reg > 0 THEN
 	RAISE NOTICE 'Customer has already registered for a course session for this course offering';
 END IF;
-
-IF (TG_OP='INSERT') THEN	
-	IF num_redeem > 0 THEN
-		RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
-	END IF;
-	IF num_reg > 0 or num_redeem > 0 or NEW.redeem_date > reg_deadline or num_registration = capacity THEN
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
+	
+IF num_redeem > 1 THEN
+	RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
 END IF;
 
-IF (TG_OP='UPDATE') THEN
-	IF num_redeem > 1 THEN
-		RAISE NOTICE 'Customer has already redeemed for a course session for this course offering';
-	END IF;
-	IF num_reg > 0 or num_redeem > 1 or NEW.redeem_date > reg_deadline or num_registration = capacity THEN
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
+IF num_reg > 0 or num_redeem > 1 or NEW.redeem_date > reg_deadline or num_registration = capacity THEN
+	RAISE EXCEPTION 'Operation aborted';
 END IF;
+
 END;
 $$ LANGUAGE plpgsql;
 
---check if a customer has more than 1 active/partially active packages
-CREATE TRIGGER package_trigger
-BEFORE INSERT OR UPDATE ON Buys
-FOR EACH ROW EXECUTE FUNCTION package_func();
+drop trigger if exists redemption_limit_trigger on Redeems;
 
+CREATE CONSTRAINT TRIGGER redemption_limit_trigger
+AFTER INSERT OR UPDATE ON Redeems
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE redemption_limit_func();
+
+
+--check if a customer has more than 1 active/partially active packages
 CREATE OR REPLACE FUNCTION package_func() RETURNS TRIGGER
 AS $$
 DECLARE
@@ -513,33 +546,23 @@ from (Redeems natural join Sessions)
 where package_id = B1.package_id
 and session_date - now()::date >= 7
 );
-
-IF (TG_OP='INSERT') THEN	
-	IF num_active_pkg = 1 THEN
-		RAISE NOTICE 'Customer can only have at most 1 active package';
-	END IF;
-	IF num_partially_active_pkg = 1 THEN
-		RAISE NOTICE 'Customer can only have at most 1 partially active package';
-	END IF;
-	IF num_active_pkg = 1 or num_partially_active_pkg = 1 THEN
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
+	
+IF num_active_pkg > 1 THEN
+	RAISE NOTICE 'Customer can only have at most 1 active package';
+END IF;
+IF num_partially_active_pkg > 1 THEN
+	RAISE NOTICE 'Customer can only have at most 1 partially active package';
 END IF;
 
-IF (TG_OP='UPDATE') THEN	
-	IF num_active_pkg > 1 THEN
-		RAISE NOTICE 'Customer can only have at most 1 active package';
-	END IF;
-	IF num_partially_active_pkg > 1 THEN
-		RAISE NOTICE 'Customer can only have at most 1 partially active package';
-	END IF;
-	IF num_active_pkg > 1 or num_partially_active_pkg > 1 THEN
-		RETURN NULL;
-	ELSE
-		RETURN NEW;
-	END IF;
+IF num_active_pkg > 1 or num_partially_active_pkg > 1 THEN
+	RAISE EXCEPTION 'Operation aborted';
 END IF;
 END;
 $$ LANGUAGE plpgsql;
+
+drop trigger if exists package_trigger on Buys;
+
+CREATE CONSTRAINT TRIGGER package_trigger
+AFTER INSERT OR UPDATE ON Buys
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE package_func();
