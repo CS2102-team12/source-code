@@ -1249,23 +1249,23 @@ BEGIN
         raise exception 'No such session is found.';
 
     end if;
-
-    IF session_id = 1 THEN
-        UPDATE Course_offerings
-        SET start_date = (SELECT session_date FROM Sessions WHERE sid = 2 
-        AND course_id = cid AND launch_date = l_date)
-        WHERE course_id = cid AND launch_date = l_date;
     
-    ELSEIF session_id = num_sessions THEN
-        UPDATE Course_offerings
-        SET end_date = (SELECT session_date FROM Sessions WHERE sid = num_sessions - 1
-        AND course_id = cid AND launch_date = l_date)
-        WHERE course_id = cid AND launch_date = l_date;
-    
-    END IF;
-
     DELETE FROM Sessions
     WHERE sid = session_id AND course_id = cid AND launch_date = l_date;
+
+    UPDATE Course_offerings
+    SET start_date = (SELECT session_date FROM Sessions WHERE
+    course_id = cid AND launch_date = l_date AND 
+    session_date <= all(SELECT session_date FROM Sessions WHERE
+    course_id = cid AND launch_date = l_date))
+    WHERE course_id = cid AND launch_date = l_date;
+
+    UPDATE Course_offerings
+    SET end_date = (SELECT session_date FROM Sessions WHERE
+    course_id = cid AND launch_date = l_date AND 
+    session_date >= all(SELECT session_date FROM Sessions WHERE
+    course_id = cid AND launch_date = l_date))
+    WHERE course_id = cid AND launch_date = l_date;
 
     loop_counter := session_id + 1;
 
@@ -1351,19 +1351,6 @@ BEGIN
     /* make sure insertion is within 1 to num_sessions + 1. */
     new_session_id := least(greatest(new_session_id, 1), num_sessions + 1);
 
-    /* If new session is earliest or latest, change start_date or end_date of course offering. */
-    IF new_session_id = 1 THEN
-        UPDATE Course_offerings
-        SET start_date = new_session_day
-        WHERE course_id = cid AND launch_date = l_date;
-    
-    ELSEIF new_session_id = num_sessions + 1 THEN
-        UPDATE Course_offerings
-        SET end_date = new_session_day 
-        WHERE course_id = cid AND launch_date = l_date;
-    
-    END IF;
-
     /* increment sid of sessions after the inserted session. */
     loop_counter := num_sessions;
     LOOP
@@ -1382,6 +1369,21 @@ BEGIN
     VALUES (new_session_id, new_session_day, new_session_start_hour,
     new_session_start_hour + make_interval(hours := session_duration), 
     room_id, instructor_id, l_date, cid);
+
+    UPDATE Course_offerings
+    SET start_date = (SELECT session_date FROM Sessions WHERE
+    course_id = cid AND launch_date = l_date AND 
+    session_date <= all(SELECT session_date FROM Sessions WHERE
+    course_id = cid AND launch_date = l_date))
+    WHERE course_id = cid AND launch_date = l_date;
+
+    UPDATE Course_offerings
+    SET end_date = (SELECT session_date FROM Sessions WHERE
+    course_id = cid AND launch_date = l_date AND 
+    session_date >= all(SELECT session_date FROM Sessions WHERE
+    course_id = cid AND launch_date = l_date))
+    WHERE course_id = cid AND launch_date = l_date;
+
 END;
 $$ LANGUAGE plpgsql;
 
