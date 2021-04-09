@@ -1290,7 +1290,6 @@ DECLARE
     count_rid int;
     count_eid int;
     num_sessions int;
-    inconsistent_id_and_date int;
     loop_counter int;
 
 BEGIN 
@@ -1318,16 +1317,6 @@ BEGIN
     FROM Sessions
     WHERE launch_date = l_date AND course_id = cid;
 
-    /* Check if new_session_day is not consistent with other
-    session's dates based on their session numbering. */
-    SELECT count(*) INTO inconsistent_id_and_date
-    FROM Sessions
-    WHERE launch_date = l_date AND course_id = cid
-    AND ((sid < new_session_id AND 
-    (session_date > new_session_day OR (session_date = new_session_day AND start_time > new_session_start_hour)))
-    OR (sid >= new_session_id AND 
-    (session_date < new_session_day OR (session_date = new_session_day AND start_time < new_session_start_hour))));
-
     if deadline < current_date then
         raise exception 'Course offering deadline has passed. Deadline: %; Today: %', deadline, current_date;
 
@@ -1339,9 +1328,6 @@ BEGIN
 
     elseif count_eid <= 0 then
         raise exception 'Instructor is busy.';
-    
-    elseif inconsistent_id_and_date > 0 then
-        raise exception 'Mismatch with existing session id and dates.';
     
     end if;
 
@@ -1383,6 +1369,7 @@ BEGIN
 
 END;
 $$ LANGUAGE plpgsql;
+
 
 --30
 create or replace function view_manager_report()
