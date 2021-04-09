@@ -202,19 +202,22 @@ call update_room (9, date '2021-03-15', 3, 4);
 call update_room (6, date '2021-04-08', 2, 5);
 call update_room (9, date '2021-03-15', 3, 6);
 
-call cancel_registration(4, 6, date '2021-04-08');
 --call cancel_registration(2,8, date'2021-03-08');
 --call cancel_registration(0,8, date'2021-03-08');
 --call cancel_registration(6,8, date'2021-03-08');
 --call cancel_registration(9,8, date'2021-03-08');
 --call cancel_registration(14,8, date'2021-03-08');
+call cancel_registration(4, 6, date '2021-04-08');
 call cancel_registration(5, 6, date '2021-04-08');
 call cancel_registration(6, 6, date '2021-04-08');
 call cancel_registration(9, 6, date '2021-04-08');
 call cancel_registration(14, 6, date '2021-04-08');
 call cancel_registration(10, 9, date '2021-03-15');
 call cancel_registration(12, 9, date '2021-03-15');
-
+call cancel_registration(11, 9, date '2021-03-15');
+call cancel_registration(12, 7, date '2021-11-16');
+call cancel_registration(10, 7, date '2021-11-16');
+                                                                                                                                                    
 --call register_session(6,8, date'2021-03-08', 1,FALSE);
 --call register_session(9,8, date'2021-03-08', 1,FALSE);
 --call register_session(14,8, date'2021-03-08', 1,FALSE);
