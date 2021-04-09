@@ -5,10 +5,10 @@ Course_offerings, Sessions, Cancels, Registers, Buys, Redeems;
 
 create table Customers (
 cust_id int primary key,
-address text,
-phone text,
-name text,
-email text
+address text not null,
+phone text not null,
+name text not null,
+email text not null
 );
 
 create table Credit_cards (
@@ -20,23 +20,23 @@ expiry_date date not null
 create table Owns (
 card_number bigint references Credit_cards,
 cust_id int references Customers,
-from_date date,
+from_date date not null,
 primary key(card_number,cust_id)
 );
 
 create table Employees (
 eid int primary key,
-name text,
-phone text,
-address text,
-email text,
+name text not null,
+phone text not null,
+address text not null,
+email text not null,
 depart_date date,
 join_date date not null
 );
 
 create table Pay_slips (
-payment_date date,
-amount numeric,
+payment_date date not null,
+amount numeric not null,
 num_work_hours numeric
 check (num_work_hours <= 30),
 num_work_days int,
@@ -46,13 +46,13 @@ primary key(eid,payment_date)
 );
 
 create table Part_time_Emp (
-hourly_rate numeric,
+hourly_rate numeric not null,
 eid int primary key references Employees
 on delete cascade
 );
 
 create table Full_time_Emp (
-monthly_salary numeric,
+monthly_salary numeric not null,
 eid int primary key references Employees
 on delete cascade
 );
@@ -69,17 +69,17 @@ on delete cascade
 
 create table Course_packages (
 package_id int primary key,
-sale_start_date date,
-sale_end_date date,
-num_free_registrations int,
-name text,
-price numeric
+sale_start_date date not null,
+sale_end_date date not null,
+num_free_registrations int not null,
+name text not null,
+price numeric not null
 );
 
 create table Rooms (
 rid int primary key,
-location text,
-seating_capacity int
+location text not null,
+seating_capacity int not null
 );
 
 create table Course_areas (
@@ -89,9 +89,9 @@ eid int not null references Managers
 
 create table Courses (
 course_id int primary key,
-duration int,
-title text,
-description text, 
+duration int not null,
+title text not null,
+description text not null, 
 name text not null references Course_areas
 );
 
@@ -122,9 +122,9 @@ start_date date not null,
 end_date date not null,
 registration_deadline date not null
 check ( DATE_PART('day',start_date::timestamp-registration_deadline::timestamp) >= 10),
-target_number_registrations int,
+target_number_registrations int not null,
 seating_capacity int not null,
-fees numeric,
+fees numeric not null,
 eid int not null references Administrators,
 mid int not null references Managers,
 course_id int references Courses
@@ -134,11 +134,11 @@ primary key(launch_date,course_id)
 
 create table Sessions (
 sid int,
-session_date date
+session_date date not null
 check ( extract(dow from session_date::timestamp) >= 1 and extract(dow from session_date::timestamp) <= 5),
-start_time time
+start_time time not null
 check ( start_time::time >= '0900' and start_time::time < '1200' or start_time::time >= '1400' and start_time::time < '1800'),
-end_time time
+end_time time not null
 check (end_time::time <= '1800' and end_time::time > '0900'),
 rid int not null references Rooms,
 eid int not null references Instructors,
