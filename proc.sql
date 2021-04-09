@@ -565,7 +565,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 --14
---might need to check if the json format is agreeable with all of you, currently: {all the info}, {session 1 info}, {session 2 info}
 CREATE OR REPLACE FUNCTION get_my_course_package(cust_id_in int)
 RETURNS json AS $$
 DECLARE
@@ -658,8 +657,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 --20
---check: package_credit refers to the current amount of credit in active package, or is it the credit refunded (1 or 0).
--- check: whether we should remove from registers and redeems, using check of launch_date and course_id and cust_id
 CREATE OR REPLACE PROCEDURE cancel_registration(cust_id_in int, course_id_in int, launch_date_in date)
 AS $$
 DECLARE
@@ -1008,7 +1005,7 @@ $$ LANGUAGE plpgsql;
 -- 1
 CREATE OR REPLACE PROCEDURE add_employee(IN em_name TEXT, IN em_address TEXT,
 IN em_phone TEXT, IN em_email TEXT, IN join_date date, IN salary_type TEXT,
-IN rate INT, IN employee_type TEXT, IN em_areas text[]) AS $$
+IN rate numeric, IN employee_type TEXT, IN em_areas text[]) AS $$
 
 DECLARE
     employee_id INT;
